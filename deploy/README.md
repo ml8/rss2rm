@@ -11,14 +11,14 @@ Client (https://feeds.example.org)
 Google Cloud Load Balancer (global static IP, managed TLS certificate)
   │
   ▼
-GKE Autopilot Pod
+GKE Pod
 ├── rss2rm (Go binary + web UI)
 └── cloud-sql-auth-proxy (localhost:3306 → Cloud SQL)
 
 Cloud SQL (MySQL 8.0, private IP)
 ```
 
-All infrastructure is Google-managed: node upgrades (Autopilot), database backups and patching (Cloud SQL), and certificate renewal (ManagedCertificate). No ongoing maintenance required.
+All infrastructure is Google-managed: database backups and patching (Cloud SQL), and certificate renewal (ManagedCertificate). Autopilot clusters also manage node upgrades automatically.
 
 ## Prerequisites
 
@@ -35,15 +35,25 @@ Edit `deploy/config.env`:
 
 ```bash
 PROJECT_ID=your-gcp-project     # GCP project ID
-REGION=us-central1               # Region for cluster and database
+REGION=us-central1               # Region for database, Artifact Registry, and cluster (if regional)
 CLUSTER_NAME=rss2rm              # GKE cluster name
+CLUSTER_ZONE=                    # Set for zonal clusters (e.g. us-central1-a). Leave empty for regional.
 STATIC_IP_NAME=rss2rm-ip         # Name for the global static IP
 DOMAIN=feeds.example.org         # Domain for HTTPS certificate
 SQL_INSTANCE_NAME=rss2rm-db      # Cloud SQL instance name
 SQL_DB_NAME=rss2rm               # MySQL database name
 SQL_USER=rss2rm                  # MySQL username
-IMAGE_NAME=gcr.io/${PROJECT_ID}/rss2rm
+IMAGE_NAME=${REGION}-docker.pkg.dev/${PROJECT_ID}/rss2rm/rss2rm
 ```
+
+## Using an existing cluster
+
+To deploy to a pre-existing GKE cluster instead of creating a new one:
+
+1. Set `CLUSTER_NAME` to the name of your existing cluster.
+2. If the cluster is **zonal**, set `CLUSTER_ZONE` to its zone (e.g., `us-west1-a`). Leave it empty for regional clusters.
+
+`setup.sh` will skip cluster creation if the cluster already exists and fetch credentials for it. `teardown.sh` does not delete the cluster by default — pass `--delete-cluster` to include it.
 
 ## Step-by-step
 
@@ -53,7 +63,7 @@ IMAGE_NAME=gcr.io/${PROJECT_ID}/rss2rm
 ./deploy/setup.sh
 ```
 
-Creates: global static IP, GKE Autopilot cluster, Cloud SQL MySQL instance (db-f1-micro, private IP), database user, admin token, Workload Identity binding, K8s secrets. Credentials saved to `deploy/.secrets.env`. Takes 5-10 minutes.
+Creates: global static IP, GKE Autopilot cluster (skipped if `CLUSTER_NAME` already exists), Cloud SQL MySQL instance (db-f1-micro, private IP), database user, admin token, Workload Identity binding, K8s secrets. Credentials saved to `deploy/.secrets.env`. Takes 5-10 minutes.
 
 ### 2. Configure DNS
 
@@ -77,7 +87,7 @@ DNS must resolve before the managed certificate can provision.
 ./deploy/deploy.sh
 ```
 
-Builds the Docker image, pushes to GCR, and applies K8s manifests (deployment with Cloud SQL proxy sidecar, NodePort service, Ingress with ManagedCertificate).
+Builds the Docker image, pushes to Artifact Registry, and applies K8s manifests (deployment with Cloud SQL proxy sidecar, NodePort service, Ingress with ManagedCertificate).
 
 The Google-managed TLS certificate provisions automatically once DNS resolves. This takes 10-20 minutes. Check status:
 
@@ -109,14 +119,20 @@ curl -X POST http://localhost:9090/admin/users \
 ./deploy/teardown.sh
 ```
 
-Deletes the GKE cluster, Cloud SQL instance (all data), static IP, and service account. Requires typing `yes` to confirm.
+Deletes the K8s namespace, Cloud SQL instance (all data), Artifact Registry repository, static IP, and service account. The GKE cluster is **not** deleted by default. To also delete the cluster:
+
+```bash
+./deploy/teardown.sh --delete-cluster
+```
+
+Requires typing `yes` to confirm.
 
 ## Artifacts
 
 | Resource | Type | Notes |
 |----------|------|-------|
 | Global static IP | `compute.googleapis.com/Address` | Persists across redeploys |
-| GKE cluster | `container.googleapis.com/Cluster` | Autopilot, regional |
+| GKE cluster | `container.googleapis.com/Cluster` | Created by setup if it doesn't exist; not deleted by default |
 | Cloud SQL instance | `sqladmin.googleapis.com/Instance` | MySQL 8.0, db-f1-micro, private IP |
 | Google Service Account | `iam.googleapis.com/ServiceAccount` | Cloud SQL client role |
 | K8s Deployment | `rss2rm` | App + Cloud SQL proxy sidecar |
@@ -126,7 +142,7 @@ Deletes the GKE cluster, Cloud SQL instance (all data), static IP, and service a
 | K8s ManagedCertificate | `rss2rm-cert` | Auto-renewing TLS for the domain |
 | K8s Secret | `rss2rm-db-secrets` | DB credentials |
 | K8s Secret | `rss2rm-admin-secrets` | Admin API token |
-| Container image | `gcr.io/PROJECT/rss2rm:latest` | Built by deploy.sh |
+| Container image | `REGION-docker.pkg.dev/PROJECT/rss2rm/rss2rm:latest` | Built by deploy.sh, stored in Artifact Registry |
 
 ## Files
 
@@ -148,7 +164,7 @@ deploy/
 
 | Resource | Estimate |
 |----------|----------|
-| GKE Autopilot pod (0.25 vCPU, 512Mi) | ~$5-8 |
+| GKE Autopilot pod (0.25 vCPU, 512Mi) | ~$5-8 (Standard clusters vary) |
 | Cloud SQL db-f1-micro | ~$8-10 |
 | Global static IP + load balancer | ~$3-5 |
 | **Total** | **~$18-25** |

@@ -148,9 +148,9 @@ func Open(driver, dsn string) (*DB, error) {
 
 func (d *DB) initSchema() error {
 	tables := []string{
-		`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)`,
+		"CREATE TABLE IF NOT EXISTS settings (`key` VARCHAR(255) PRIMARY KEY, value TEXT)",
 		`CREATE TABLE IF NOT EXISTS feeds (
-			id TEXT PRIMARY KEY,
+			id VARCHAR(255) PRIMARY KEY,
 			url TEXT,
 			name TEXT,
 			last_polled TIMESTAMP,
@@ -159,8 +159,8 @@ func (d *DB) initSchema() error {
 			user_id TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS destinations (
-			id TEXT PRIMARY KEY,
-			name TEXT UNIQUE,
+			id VARCHAR(255) PRIMARY KEY,
+			name VARCHAR(255) UNIQUE,
 			type TEXT,
 			config TEXT,
 			is_default BOOLEAN,
@@ -168,8 +168,8 @@ func (d *DB) initSchema() error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS entries (
 			id INTEGER PRIMARY KEY` + d.autoIncrement() + `,
-			feed_id TEXT,
-			entry_id TEXT,
+			feed_id VARCHAR(255),
+			entry_id VARCHAR(255),
 			title TEXT,
 			url TEXT,
 			published TIMESTAMP,
@@ -179,11 +179,11 @@ func (d *DB) initSchema() error {
 			FOREIGN KEY(feed_id) REFERENCES feeds(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS digests (
-			id TEXT PRIMARY KEY,
-			name TEXT UNIQUE,
+			id VARCHAR(255) PRIMARY KEY,
+			name VARCHAR(255) UNIQUE,
 			directory TEXT,
 			schedule TEXT,
-			destination_id TEXT,
+			destination_id VARCHAR(255),
 			last_generated TIMESTAMP,
 			last_delivered_id INTEGER DEFAULT 0,
 			active BOOLEAN DEFAULT 1,
@@ -192,9 +192,9 @@ func (d *DB) initSchema() error {
 			FOREIGN KEY(destination_id) REFERENCES destinations(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS feed_delivery (
-			feed_id TEXT PRIMARY KEY,
+			feed_id VARCHAR(255) PRIMARY KEY,
 			directory TEXT,
-			destination_id TEXT,
+			destination_id VARCHAR(255),
 			last_delivered_id INTEGER DEFAULT 0,
 			retain INTEGER DEFAULT 0,
 			user_id TEXT,
@@ -202,15 +202,15 @@ func (d *DB) initSchema() error {
 			FOREIGN KEY(destination_id) REFERENCES destinations(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS digest_feeds (
-			digest_id TEXT,
-			feed_id TEXT,
+			digest_id VARCHAR(255),
+			feed_id VARCHAR(255),
 			PRIMARY KEY(digest_id, feed_id),
 			FOREIGN KEY(digest_id) REFERENCES digests(id),
 			FOREIGN KEY(feed_id) REFERENCES feeds(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS users (
-			id TEXT PRIMARY KEY,
-			email TEXT UNIQUE NOT NULL,
+			id VARCHAR(255) PRIMARY KEY,
+			email VARCHAR(255) UNIQUE NOT NULL,
 			password_hash TEXT NOT NULL,
 			verified BOOLEAN DEFAULT 1,
 			verify_token TEXT,
@@ -218,8 +218,8 @@ func (d *DB) initSchema() error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS sessions (
-			token TEXT PRIMARY KEY,
-			user_id TEXT NOT NULL,
+			token VARCHAR(255) PRIMARY KEY,
+			user_id VARCHAR(255) NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			expires_at TIMESTAMP NOT NULL,
 			FOREIGN KEY(user_id) REFERENCES users(id)

@@ -107,10 +107,12 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
+        # Google-maintained image; gcr.io URLs are hosted on Artifact Registry and remain valid.
         - name: cloud-sql-auth-proxy
           image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.1
           args:
             - --structured-logs
+            - --private-ip
             - --port=3306
             - ${CONNECTION_NAME}
           securityContext:

@@ -4,11 +4,25 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/config.env"
 
+# Determine cluster location flag (zonal vs regional).
+if [ -n "${CLUSTER_ZONE:-}" ]; then
+  CLUSTER_LOC_FLAG="--zone=$CLUSTER_ZONE"
+else
+  CLUSTER_LOC_FLAG="--region=$REGION"
+fi
+
 echo "=== Enabling GCP APIs ==="
 gcloud services enable \
   container.googleapis.com \
   sqladmin.googleapis.com \
+  artifactregistry.googleapis.com \
   --project="$PROJECT_ID"
+
+echo "=== Creating Artifact Registry repository ==="
+gcloud artifacts repositories create rss2rm \
+  --repository-format=docker \
+  --location="$REGION" \
+  --project="$PROJECT_ID" 2>/dev/null || true
 
 echo "=== Reserving global static IP ==="
 gcloud compute addresses create "$STATIC_IP_NAME" \
@@ -19,14 +33,14 @@ STATIC_IP=$(gcloud compute addresses describe "$STATIC_IP_NAME" \
 echo "Static IP: $STATIC_IP"
 echo "Point your DNS A record: $DOMAIN → $STATIC_IP"
 
-echo "=== Creating GKE Autopilot cluster ==="
+echo "=== Creating GKE cluster (skipped if it already exists) ==="
 gcloud container clusters create-auto "$CLUSTER_NAME" \
-  --region="$REGION" \
-  --project="$PROJECT_ID"
+  $CLUSTER_LOC_FLAG \
+  --project="$PROJECT_ID" 2>/dev/null || true
 
 echo "=== Getting cluster credentials ==="
 gcloud container clusters get-credentials "$CLUSTER_NAME" \
-  --region="$REGION" \
+  $CLUSTER_LOC_FLAG \
   --project="$PROJECT_ID"
 
 echo "=== Creating Cloud SQL instance (this takes a few minutes) ==="

@@ -35,6 +35,15 @@ function showApp(user) {
 function showAuth() {
     document.getElementById('authSection').style.display = '';
     document.getElementById('appSection').style.display = 'none';
+    // Hide registration UI if the server has registration disabled.
+    fetch(`${API_BASE}/auth/register`, { method: 'POST' }).then(r => {
+        const disabled = r.status === 403;
+        document.getElementById('showRegister').parentElement.style.display = disabled ? 'none' : '';
+        if (disabled) {
+            document.getElementById('registerForm').style.display = 'none';
+            document.getElementById('loginForm').style.display = '';
+        }
+    }).catch(() => {});
 }
 
 function showAuthError(message) {

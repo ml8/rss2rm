@@ -4,10 +4,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/config.env"
 
-echo "=== Building container image ==="
-docker build -t "$IMAGE_NAME:latest" "$(dirname "$SCRIPT_DIR")"
+echo "=== Configuring Docker for Artifact Registry ==="
+gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
-echo "=== Pushing to Container Registry ==="
+echo "=== Building container image ==="
+docker buildx build --platform linux/amd64 -t "$IMAGE_NAME:latest" "$(dirname "$SCRIPT_DIR")"
+
+echo "=== Pushing to Artifact Registry ==="
 docker push "$IMAGE_NAME:latest"
 
 echo "=== Getting Cloud SQL connection name ==="
@@ -16,7 +19,7 @@ CONNECTION_NAME=$(gcloud sql instances describe "$SQL_INSTANCE_NAME" \
 
 echo "=== Resolving static IP ==="
 STATIC_IP=$(gcloud compute addresses describe "$STATIC_IP_NAME" \
-  --region="$REGION" --project="$PROJECT_ID" --format='value(address)')
+  --global --project="$PROJECT_ID" --format='value(address)')
 
 echo "=== Applying Kubernetes manifests ==="
 kubectl apply -n rss2rm -f "$SCRIPT_DIR/k8s/namespace.yaml"
@@ -25,6 +28,9 @@ export IMAGE_NAME CONNECTION_NAME DOMAIN STATIC_IP_NAME
 envsubst < "$SCRIPT_DIR/k8s/deployment.yaml" | kubectl apply -n rss2rm -f -
 envsubst < "$SCRIPT_DIR/k8s/service.yaml" | kubectl apply -n rss2rm -f -
 kubectl apply -n rss2rm -f "$SCRIPT_DIR/k8s/admin-service.yaml"
+
+echo "=== Restarting pods ==="
+kubectl rollout restart deployment/rss2rm -n rss2rm
 
 echo "=== Waiting for rollout ==="
 kubectl rollout status deployment/rss2rm -n rss2rm --timeout=300s
