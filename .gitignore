@@ -1,0 +1,31 @@
+# Binaries
+rss2rm
+rss2rm-server
+*.exe
+
+# Database files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/
+
+# Config (if local secrets)
+config.yaml
+rmapi.conf
+.rmapi
+
+# Logs
+*.log
+
+# Temp files
+*.pdf
+*.html
+
+# Web build artifacts
+web/node_modules/
+web/dist/
+
+# OS files
+.DS_Store
+deploy/.secrets.env

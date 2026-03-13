@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rss2rm
+  labels:
+    app: rss2rm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rss2rm
+  template:
+    metadata:
+      labels:
+        app: rss2rm
+    spec:
+      serviceAccountName: rss2rm
+      containers:
+        - name: rss2rm
+          image: ${IMAGE_NAME}:latest
+          command: ["./rss2rm"]
+          args:
+            - serve
+            - -port=8080
+            - -admin-port=9090
+            - -poll
+            - -poll-interval=1800
+            - -web-dir=./web-dist
+            - -db-driver=mysql
+            - -db-dsn=$(DB_USER):$(DB_PASSWORD)@tcp(127.0.0.1:3306)/$(DB_NAME)?parseTime=true
+            - -registration=closed
+            - -base-url=https://${DOMAIN}
+            - -admin-token=$(ADMIN_TOKEN)
+            # Uncomment the following to enable email verification:
+            # - -verify-email
+            # - -smtp-host=$(SMTP_HOST)
+            # - -smtp-port=$(SMTP_PORT)
+            # - -smtp-user=$(SMTP_USER)
+            # - -smtp-password=$(SMTP_PASSWORD)
+            # - -smtp-from=$(SMTP_FROM)
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: rss2rm-db-secrets
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rss2rm-db-secrets
+                  key: password
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: rss2rm-db-secrets
+                  key: database
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rss2rm-admin-secrets
+                  key: token
+            # Uncomment when using email verification:
+            # - name: SMTP_HOST
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: rss2rm-smtp-secrets
+            #       key: host
+            # - name: SMTP_PORT
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: rss2rm-smtp-secrets
+            #       key: port
+            # - name: SMTP_USER
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: rss2rm-smtp-secrets
+            #       key: user
+            # - name: SMTP_PASSWORD
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: rss2rm-smtp-secrets
+            #       key: password
+            # - name: SMTP_FROM
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: rss2rm-smtp-secrets
+            #       key: from
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: cloud-sql-auth-proxy
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.1
+          args:
+            - --structured-logs
+            - --port=3306
+            - ${CONNECTION_NAME}
+          securityContext:
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
