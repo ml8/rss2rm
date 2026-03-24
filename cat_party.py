@@ -26,6 +26,13 @@ PAUSE_MARKERS = [
     "DIRECTORY TOUR",
     "NAP TIME",
     "THE END",
+    # drop-pandoc party
+    "A Dependency Removal Party",
+    "THE GREAT UNINSTALLING",
+    "THINGS PANDOC DID",
+    "DOCKERFILE DIET",
+    "MOMENT OF SILENCE",
+    "THE NEW COMMAND",
 ]
 
 FAST_DELAY = 0.03

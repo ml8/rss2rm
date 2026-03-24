@@ -35,7 +35,7 @@ CGO is required for SQLite (`github.com/mattn/go-sqlite3`). MySQL mode (`--db-dr
 
 ## Architecture
 
-Monolithic Go binary with two modes: CLI and HTTP server. Pipeline: RSS fetch → readability extraction → HTML → PDF (pandoc + weasyprint) → upload to destination.
+Monolithic Go binary with two modes: CLI and HTTP server. Pipeline: RSS fetch → readability extraction → HTML → PDF (weasyprint) → upload to destination.
 
 ### Package Structure
 

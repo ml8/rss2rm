@@ -1,0 +1,177 @@
+
+        ~* FAREWELL, PANDOC *~
+     You Served Us Adequately.
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      A Dependency Removal Party
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\
+          ( o.o )
+           > ^ <
+          /|   |\
+         (_|   |_)
+
+    "One less dependency. One step
+     closer to simplicity."
+               -- Mittens, minimalist
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+      ~~ THE GREAT UNINSTALLING ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+       BEFORE:              AFTER:
+
+     ,-----------,        ,-----------,
+    |   pandoc    |      |             |
+    |      |      |      |             |
+    |      v      |      |             |
+    |  weasyprint |      |  weasyprint |
+    |      |      |      |      |      |
+    |      v      |      |      v      |
+    |    PDF!     |      |    PDF!     |
+     '-----------'        '-----------'
+
+        /\_/\               /\_/\
+       ( o.o )             ( ^.^ )
+        > ^ <               > w <
+
+    "Why were there     "Same PDF.
+     two of them?"       Less stuff."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     ____________________________________
+    |                                    |
+    |  THINGS PANDOC DID FOR US:         |
+    |                                    |
+    |  1. Received HTML                  |
+    |  2. Passed it to weasyprint        |
+    |  3. That's it                      |
+    |  4. Seriously, that's all          |
+    |                                    |
+    |  DISK SPACE RECOVERED: ~100 MB     |
+    |____________________________________|
+
+          /\_/\     /\_/\
+         ( o.o )   ( o.o )
+          > ^ <     > ^ <
+
+    "A hundred megabytes!" gasps Byte.
+
+    "We could fit so many cat pictures
+     in that space," whispers Pixel.
+
+    "We are not doing that," says
+     Professor Whiskers.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+         ~~ DOCKERFILE DIET RESULTS ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     apt-get install -y \
+    ,----------------------,
+    |  ca-certificates  OK |
+    |  pandoc        GONE  | <-- /\_/\ "bye"
+    |  python3          OK |     ( ^.^ )
+    |  python3-pip      OK |      > ~ <
+    |  python3-venv     OK |
+    |  libpango-1.0-0   OK |
+    |  ...              OK |
+    '----------------------'
+
+    The Dockerfile is lighter.
+    The container is thinner.
+    The kittens are pleased.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        ~~ A MOMENT OF SILENCE ~~
+
+               /\_/\
+              ( -.- )
+               > ~ <
+
+    Pandoc, you are a good tool.
+    You convert LaTeX to HTML,
+    Markdown to DOCX,
+    reStructuredText to EPUB.
+
+    You do many things well.
+
+    Passing HTML to weasyprint
+    was not one of them. It was
+    beneath you. You deserve
+    more interesting work.
+
+    Go in peace. We will call
+    if we need to convert a
+    thesis to a slide deck.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+          ~~ THE NEW COMMAND ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     OLD:
+     "pandoc {url} -o {output}
+            --pdf-engine=weasyprint"
+
+     NEW:
+     "weasyprint {url} {output}"
+
+          /\_/\
+         ( ^.^ )
+          > w <
+
+    "Shorter is better,"
+    says Professor Whiskers.
+
+    "Fewer flags. Fewer moving
+     parts. Fewer things to
+     break at 3 AM."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+             ~~ NAP TIME ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\
+       ( -.- )  zzZZzz
+        > ~ <
+       /     \___
+      /   _      \
+     |   (_)      |
+      \           /
+       '~~~~~~~~~'
+
+    "The best dependency is the
+     one you don't have."
+
+                 -- Professor Whiskers
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+            ~~~~|||~~~~
+           /           \
+          |  -100 MB    |
+          |  +1 CLARITY |
+           \           /
+            ~~~~~~~~~~~
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.

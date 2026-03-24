@@ -26,7 +26,7 @@
 3.  **Poll Loop**:
     *   Fetches RSS items from active feeds.
     *   Extracts article content (Readability).
-    *   Converts to PDF (Pandoc + WeasyPrint).
+    *   Converts to PDF (WeasyPrint).
     *   Resolves destination (feed-specific or system default).
     *   Uploads to destination.
 4.  **Client/UI**:
@@ -180,8 +180,7 @@ Note: `url` is NOT unique in `feeds` table. Adding the same URL creates a new fe
 
 ## External Dependencies
 
-*   **Pandoc**: Used for document conversion.
-*   **WeasyPrint**: Recommended PDF engine for Pandoc to handle WebP images and modern CSS.
+*   **WeasyPrint**: Converts HTML to PDF. Handles WebP images and modern CSS.
 
 ## API Reference
 

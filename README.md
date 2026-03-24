@@ -5,7 +5,7 @@ Fetches RSS feeds, converts articles to PDF, and uploads them to a reMarkable ta
 ## Features
 
 - Polls RSS feeds on a schedule and extracts article content
-- Converts articles to PDF using pandoc and weasyprint
+- Converts articles to PDF using weasyprint
 - Uploads to reMarkable Cloud by default; other destinations (local filesystem, email, Gmail, Dropbox, Notion, GCP) available via `-destinations` flag
 - Digests: groups feeds into scheduled combined PDFs
 - Retention policy: keep last N deliveries per feed or digest
@@ -15,8 +15,7 @@ Fetches RSS feeds, converts articles to PDF, and uploads them to a reMarkable ta
 ## Prerequisites
 
 - Go 1.25+
-- Pandoc
-- Weasyprint
+- WeasyPrint
 - Node.js (for frontend development only)
 
 ## Getting Started

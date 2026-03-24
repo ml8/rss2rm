@@ -75,9 +75,9 @@ const (
 )
 
 // DefaultHeadlessCommand is the default shell command template used
-// to convert HTML to PDF via pandoc and weasyprint.
+// to convert HTML to PDF via weasyprint.
 const (
-	DefaultHeadlessCommand = "pandoc {url} -o {output} --pdf-engine=weasyprint"
+	DefaultHeadlessCommand = "weasyprint {url} {output}"
 	defaultBackfillCount   = 5
 )
 
