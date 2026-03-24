@@ -93,23 +93,6 @@ func buildMIMEMessage(to, subject, body, filename, mimeType string, attachmentDa
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
-	// Write headers
-	headers := fmt.Sprintf("MIME-Version: 1.0\r\n"+
-		"To: %s\r\n"+
-		"Subject: %s\r\n"+
-		"Content-Type: multipart/mixed; boundary=%s\r\n\r\n",
-		to, subject, writer.Boundary())
-	buf.Reset()
-	buf.WriteString(headers)
-
-	// Create multipart writer with the same boundary
-	writer = multipart.NewWriter(&buf)
-	writer.SetBoundary(writer.Boundary())
-
-	// Recreate buffer with proper structure
-	buf.Reset()
-	writer = multipart.NewWriter(&buf)
-
 	// Write text part
 	textHeader := make(textproto.MIMEHeader)
 	textHeader.Set("Content-Type", "text/plain; charset=UTF-8")

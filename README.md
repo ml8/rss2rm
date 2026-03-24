@@ -14,7 +14,7 @@ Fetches RSS feeds, converts articles to PDF, and uploads them to a reMarkable ta
 
 ## Prerequisites
 
-- Go 1.22+
+- Go 1.25+
 - Pandoc
 - Weasyprint
 - Node.js (for frontend development only)

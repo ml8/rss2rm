@@ -1,0 +1,152 @@
+
+           ~* A SMALL BUT IMPORTANT PARTY *~
+        For the DB Error Abstraction Refactor
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+           And the New Cat Party System!
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\          /\_/\
+          ( o.o )        ( ^.^ )
+           > ^ <          > ~ <
+          /|   |\        /|   |\
+         (_|   |_)      (_|   |_)
+
+   "No more string   "errors.Is() is
+    matching!"         the way."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+     ~~ THE ABSTRACTION APPRECIATION GALA ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     Before:                After:
+
+     server.go              server.go
+     ,-----------.          ,-----------.
+    | strings.    |        | errors.Is(  |
+    |  Contains(  |        |   err,      |
+    |  err, "UNIQ |   =>   |   db.Err... |
+    |  UE const   |        | )           |
+    |  raint")    |        |             |
+     '-----------'          '-----------'
+
+          /\_/\
+         ( ^.^ )
+          > w <
+         /  |  \
+        '   |   '
+
+    "The DB keeps its secrets now,"
+    says Whiskers approvingly.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\     /\_/\     /\_/\
+       ( o.o )   ( o.o )   ( o.o )
+        > ^ <     > ^ <     > ^ <
+
+    Three kittens discover the new rule:
+
+    "Cat parties are now MANDATORY
+     for all major changes?!"
+
+    "This is the best rule ever added
+     to any codebase, anywhere."
+
+    "Wait -- that sounds like hyperbole."
+
+    "You're right. Let me rephrase:
+     this rule is... adequate."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+     ~~ THE CAT PARTY DIRECTORY TOUR ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+       cat_party/
+       |
+       |-- 2026-03-24_code-review.txt
+       |       "The OG. The first party."
+       |
+       '-- 2026-03-24_db-abstraction.txt
+               "You are here. Hi."
+
+          /\_/\
+         ( -.o )
+          > ~ <
+         / | | \
+
+    "With --rewind you can visit
+     past parties," explains the
+     senior cat. "Like a time
+     machine, but for ASCII art."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+          ~~ BRIEF AWARDS CEREMONY ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     ,________________________,
+    |                          |
+    |   BEST ABSTRACTION:      |
+    |     db.ErrAlreadyExists  |
+    |                          |
+    |   MOST DELETED CODE:     |
+    |     isUniqueViolation()  |
+    |     (server.go, RIP)     |
+    |                          |
+    |   BEST NEW RULE:         |
+    |     "Do not commit."     |
+    |     (Rule 10, AGENTS.md) |
+    |__________________________|
+            ||      ||
+          /\_/\   /\_/\
+         ( ^.^ ) ( ^.^ )
+          > ~ <   > ~ <
+
+    "Short party, but meaningful."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+            ~~ NAP TIME ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\
+       ( -.- )  zzZZzz
+        > ~ <
+       /     \___
+      /   _      \
+     |   (_)      |
+      \           /
+       '~~~~~~~~~'
+
+    "Errors belong in the layer
+     that understands them.
+     Cats belong on keyboards.
+     Some things are universal."
+
+                 -- Professor Whiskers
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+            ~~~~|||~~~~
+           /           \
+          |   SEE YOU   |
+          |   NEXT      |
+          |   REFACTOR  |
+           \           /
+            ~~~~~~~~~~~
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.

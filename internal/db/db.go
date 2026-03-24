@@ -7,7 +7,9 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -15,6 +17,22 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrAlreadyExists is returned when an insert fails due to a unique constraint violation.
+var ErrAlreadyExists = errors.New("already exists")
+
+// wrapUniqueErr wraps a unique constraint violation from either SQLite or MySQL
+// as ErrAlreadyExists. Other errors are returned unchanged.
+func wrapUniqueErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "UNIQUE constraint") || strings.Contains(msg, "Duplicate entry") {
+		return fmt.Errorf("%w: %v", ErrAlreadyExists, err)
+	}
+	return err
+}
 
 // DB wraps a [sql.DB] connection with driver-specific behavior.
 type DB struct {
@@ -279,7 +297,7 @@ func (db *DB) InsertDestination(userID string, d Destination) (string, error) {
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, d.ID, d.Name, d.Type, d.Config, d.IsDefault, d.UserID)
 	if err != nil {
-		return "", err
+		return "", wrapUniqueErr(err)
 	}
 	return d.ID, nil
 }
@@ -299,6 +317,9 @@ func (db *DB) GetDestinations(userID string) ([]Destination, error) {
 			return nil, err
 		}
 		dests = append(dests, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return dests, nil
 }
@@ -429,6 +450,9 @@ func (db *DB) GetActiveFeeds(userID string) ([]Feed, error) {
 		}
 		feeds = append(feeds, *f)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return feeds, nil
 }
 
@@ -496,7 +520,7 @@ func (db *DB) CreateEntry(userID string, e Entry) error {
 		INSERT INTO entries (feed_id, entry_id, title, url, published, rendered, user_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, e.FeedID, e.EntryID, e.Title, e.URL, e.Published, e.Rendered, userID)
-	return err
+	return wrapUniqueErr(err)
 }
 
 func (db *DB) GetEntry(userID string, feedID string, entryID string) (*Entry, error) {
@@ -581,6 +605,9 @@ func (db *DB) GetUndeliveredEntries(feedID string, lastDeliveredID int64) ([]Ent
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return entries, nil
 }
 
@@ -595,7 +622,7 @@ func (db *DB) InsertDigest(userID string, d Digest) (string, error) {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, d.ID, d.Name, d.Directory, d.Schedule, d.DestinationID, d.Active, d.Retain, d.UserID)
 	if err != nil {
-		return "", err
+		return "", wrapUniqueErr(err)
 	}
 	return d.ID, nil
 }
@@ -617,6 +644,9 @@ func (db *DB) GetDigests(userID string) ([]Digest, error) {
 		}
 		digests = append(digests, *d)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return digests, nil
 }
 
@@ -636,6 +666,9 @@ func (db *DB) GetActiveDigests(userID string) ([]Digest, error) {
 			return nil, err
 		}
 		digests = append(digests, *d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return digests, nil
 }
@@ -733,6 +766,9 @@ func (db *DB) GetFeedsForDigest(userID string, digestID string) ([]Feed, error) 
 		}
 		feeds = append(feeds, *f)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return feeds, nil
 }
 
@@ -755,6 +791,9 @@ func (db *DB) GetDigestsForFeed(userID string, feedID string) ([]Digest, error) 
 			return nil, err
 		}
 		digests = append(digests, *d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return digests, nil
 }
@@ -782,6 +821,9 @@ func (db *DB) GetNewEntriesForDigest(digestID string, lastDeliveredID int64) ([]
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return entries, nil
 }
 
@@ -794,7 +836,7 @@ func (db *DB) CreateUser(email, password string) (string, error) {
 	id := uuid.New().String()
 	_, err = db.Exec("INSERT INTO users (id, email, password_hash, verified) VALUES (?, ?, ?, 1)", id, email, string(hash))
 	if err != nil {
-		return "", err
+		return "", wrapUniqueErr(err)
 	}
 	return id, nil
 }
@@ -813,7 +855,7 @@ func (db *DB) CreateUnverifiedUser(email, password string, verifyTimeout time.Du
 	_, err = db.Exec("INSERT INTO users (id, email, password_hash, verified, verify_token, verify_expires) VALUES (?, ?, ?, 0, ?, ?)",
 		id, email, string(hash), token, expires)
 	if err != nil {
-		return "", "", err
+		return "", "", wrapUniqueErr(err)
 	}
 	return id, token, nil
 }
@@ -934,6 +976,9 @@ func (db *DB) GetAllUsers() ([]User, error) {
 		}
 		users = append(users, *u)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return users, nil
 }
 
@@ -960,6 +1005,9 @@ func (db *DB) GetDeliveredFiles(userID, deliveryType, deliveryRef string) ([]Del
 			return nil, err
 		}
 		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return files, nil
 }
@@ -1013,6 +1061,9 @@ func (db *DB) GetRecentDeliveries(userID string, limit int) ([]DeliveryLogEntry,
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return entries, nil
 }
 
@@ -1058,8 +1109,13 @@ func (db *DB) DeleteExpiredUnverifiedUsers() (int, error) {
 	var ids []string
 	for rows.Next() {
 		var id string
-		rows.Scan(&id)
+		if err := rows.Scan(&id); err != nil {
+			return 0, err
+		}
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
 	}
 
 	for _, id := range ids {
@@ -1084,8 +1140,13 @@ func (db *DB) GetAllSettings() (map[string]string, error) {
 	settings := make(map[string]string)
 	for rows.Next() {
 		var k, v string
-		rows.Scan(&k, &v)
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
 		settings[k] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return settings, nil
 }

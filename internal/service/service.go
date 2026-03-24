@@ -399,11 +399,11 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 	if err != nil {
 		return fmt.Errorf("digest HTML generation failed: %w", err)
 	}
+	defer os.Remove(htmlPath)
 
 	// Per-render temp directory for isolation
 	renderDir, err := os.MkdirTemp("", "rss2rm-digest-*")
 	if err != nil {
-		os.Remove(htmlPath)
 		return fmt.Errorf("failed to create render dir: %w", err)
 	}
 	defer os.RemoveAll(renderDir)
@@ -620,6 +620,7 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("HTML generation failed: %v", err)})
 		return err
 	}
+	defer os.Remove(htmlPath)
 
 	// Per-render temp directory for isolation
 	renderDir, err := os.MkdirTemp("", "rss2rm-render-*")
@@ -637,9 +638,6 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("PDF conversion failed: %v", err)})
 		return err
 	}
-
-	// Store rendered path
-	s.db.UpdateEntryRendered(entry.ID, tmpPDF)
 
 	uploadTarget := fd.Directory
 	if uploadTarget == "" {

@@ -1,0 +1,201 @@
+
+              ~* CONGRATULATIONS! *~
+         The Code Review is Complete!
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        Time to celebrate with CATS!
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\          /\_/\
+          ( o.o )        ( ^.^ )
+           > ^ <          > ~ <
+          /|   |\        /|   |\
+         (_|   |_)      (_|   |_)
+
+    "We found zero hyperbole!"  "Meow-velous!"
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+  ~~ WELCOME TO THE KITTEN CODE REVIEW PARTY ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+            /\_/\   ~*~   /\_/\
+           ( o.o )  |||  ( o.o )
+            > ^ <  /|||\ > ^ < 
+         __|/   \|_/|||\|/   \|__
+        |   PARTY   |||  TIME!   |
+        |___________|||||________|
+                    |||||
+                    |||||
+
+    Mittens and Whiskers prepare the streamers!
+
+
+       _.--._     ,~~,        _.--._
+      (  oo  )   / .. \      (  oo  )
+       \    /   ( \  / )      \    /
+       |`--'|    '.~~.'       |`--'|
+       | || |   .' || `.      | || |
+       `----'  ' .----. '     `----'
+              ~* STRING! *~
+
+    "I caught the string!" says Mittens.
+    "No, I caught it!" says Professor Whiskers.
+    "Actually, we caught 13 missing rows.Err()
+     checks. That was the REAL catch."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+         /\_/\     /\_/\     /\_/\
+        ( o.o )   ( -.o )   ( o.^ )
+         > ^ <     > ~ <     > w <
+
+     "7/10!"   "Not bad!"  "We can do
+                             better!"
+
+      Three judges rate the codebase.
+      Fair but firm. No hyperbole.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+       ~~ THE GREAT STRING CHASE ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+               ____
+              / .. \~~~~~~~~~~~~~~~~~~~~~~~,
+             ( \  / )                      |
+              '.~~.'                       |
+                ||    /\_/\               _|
+                ||   ( O.O )   "Got it!" (_)
+                ||    > ^ <
+                ||   /  |  \~,
+               ,||  '   |   ' ~~~~~~~~,
+              / ||      |             |
+             /  ``   /\_/\           _|
+            |       ( o.o )  *paw*  (_)
+            |        > ^ <
+             \      _/   \_
+              '~~~~'       '~~~~
+
+
+    Little Byte chases the string across
+    the function boundaries. Professor
+    Whiskers watches from the windowsill,
+    unimpressed.
+
+    "In my day, we had GOTO statements,"
+    says the Professor. "You kids and your
+    'structured programming.'"
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+         ~~ REFRESHMENTS TABLE ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     ,-----.    ,-----.    ,-----.
+    | TUNA  |  | CREAM |  | BUGS |
+    | CAKES |  |  PUFF  | |      |
+    |  (o)  |  |  (o)   | | (  ) |
+    `-------'  `-------'  `------'
+       /\_/\      /\_/\      /\_/\
+      ( ^.^ )    ( *.* )    ( x.x )
+       > ~ <      > o <      > n <
+    "Yum!"    "More       "I'll pass
+               please!"    on the bugs."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        ~~ AWARDS CEREMONY ~~
+
+     ,________________________,
+    |                          |
+    |   BEST BUG HUNTER:       |
+    |     rows.Err() patrol    |
+    |                          |
+    |   BEST CLEANUP:          |
+    |     HTML temp file       |
+    |     leak squad           |
+    |                          |
+    |   MOST UNNECESSARY:      |
+    |     buf.Reset() x3       |
+    |     in buildMIMEMessage  |
+    |                          |
+    |   CLEANEST CODE:         |
+    |     Zero hyperbole       |
+    |     detected!            |
+    |__________________________|
+            ||      ||
+            ||      ||
+          /\_/\   /\_/\
+         ( ^.^ ) ( ^.^ )
+          > ~ <   > ~ <
+
+    "We accept this award on behalf of
+     all the kittens who reviewed code
+     today. Thank you."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+       ~~ NAP TIME (WELL DESERVED) ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\
+       ( -.- )  zzZZzz
+        > ~ <
+       /     \___
+      /   _      \
+     |   (_)      |
+      \           /
+       '~~~~~~~~~'
+
+    "Code review complete. All bugs
+     squashed. All temp files cleaned.
+     All sentinels... sentinel-ed.
+
+     Time for a well-earned nap."
+
+                    -- Professor Whiskers
+
+
+                 /\_/\       /\_/\
+                ( -.- )     ( -.- )
+                 > ~ <  zzz  > ~ <
+              __|     |_____|     |__
+             |    sweet dreams of     |
+             |   clean code and       |
+             |   proper error         |
+             |   handling...          |
+             |________________________|
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+                |||
+            ~~~~|||~~~~
+           /           \
+          |  THANK YOU   |
+          |  FOR CODING  |
+          |  WITH US!    |
+           \           /
+            ~~~~~~~~~~~
+
+     "Same time next refactor?"
+                    -- The Kittens
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.

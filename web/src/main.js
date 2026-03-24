@@ -1090,7 +1090,6 @@ function initSSE() {
     sseSource.onmessage = function(event) {
         try {
             const data = JSON.parse(event.data);
-            console.log("SSE Event:", data);
             
             if (data.Type === 'ITEM_UPLOADED') {
                 showToast(`Uploaded: ${data.ItemTitle}`);

@@ -11,6 +11,8 @@
 7. Self-review after implementing. Strive for clear, minimal code.
 8. Keep `AGENTS.md`, `README.md`, and `docs/README.md` up to date when making significant changes.
 9. Do not push to GitHub.
+10. Do not make git commits. Leave all changes unstaged for human review.
+11. Celebrate major changes with a cat party. Add a dated `.txt` file to `cat_party/` (e.g., `2026-03-24_feature-name.txt`). ASCII art, kittens, 80 columns max. Run with `python3 cat_party.py`.
 
 ## Build & Test
 

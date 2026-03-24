@@ -11,13 +11,6 @@ import (
 	"google.golang.org/api/gmail/v1"
 )
 
-// OAuthConfig holds the configuration for Gmail OAuth2.
-type OAuthConfig struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
-}
-
 // Token represents stored OAuth2 tokens.
 type Token struct {
 	AccessToken  string

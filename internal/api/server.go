@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -72,6 +73,9 @@ const (
 	RegistrationClosed    RegistrationMode = "closed"
 	RegistrationAllowlist RegistrationMode = "allowlist"
 )
+
+// errPollInProgress is returned when a poll is already running.
+var errPollInProgress = errors.New("poll already in progress")
 
 // ServerConfig holds configuration for the HTTP server.
 type ServerConfig struct {
@@ -316,7 +320,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if s.config.VerifyEmail && s.config.SMTP.IsConfigured() {
 		id, token, err := s.db.CreateUnverifiedUser(req.Email, req.Password, s.config.VerifyTimeout)
 		if err != nil {
-			if strings.Contains(err.Error(), "UNIQUE constraint") {
+			if errors.Is(err, db.ErrAlreadyExists) {
 				log.Printf("[Auth] Registration failed (duplicate): email=%s ip=%s", req.Email, r.RemoteAddr)
 				http.Error(w, "email already registered", http.StatusConflict)
 				return
@@ -347,7 +351,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.db.CreateUser(req.Email, req.Password)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE constraint") {
+		if errors.Is(err, db.ErrAlreadyExists) {
 			log.Printf("[Auth] Registration failed (duplicate): email=%s ip=%s", req.Email, r.RemoteAddr)
 			http.Error(w, "email already registered", http.StatusConflict)
 			return
@@ -997,7 +1001,7 @@ func (s *Server) executePoll(ctx context.Context, urls []string) error {
 	s.pollMu.Lock()
 	if s.pollActive {
 		s.pollMu.Unlock()
-		return fmt.Errorf("poll already in progress")
+		return errPollInProgress
 	}
 	s.pollActive = true
 	s.pollMu.Unlock()
@@ -1136,7 +1140,7 @@ func (s *Server) startBackgroundPoller() {
 func (s *Server) runBackgroundPoll() {
 	log.Println("Starting background poll...")
 	if err := s.executePoll(context.Background(), nil); err != nil {
-		if err.Error() == "poll already in progress" {
+		if errors.Is(err, errPollInProgress) {
 			log.Println("Background poll skipped: poll already in progress")
 		} else {
 			log.Printf("Background poll error: %v", err)
