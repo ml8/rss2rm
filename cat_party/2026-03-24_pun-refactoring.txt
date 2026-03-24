@@ -1,0 +1,173 @@
+
+       ~* THE GREAT REFACTORING *~
+      of cat_party.py itself, no less
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       In Which Puns Were Introduced
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\          /\_/\
+          ( o.o )        ( ^.^ )
+           > ^ <          > ~ <
+          /|   |\        /|   |\
+         (_|   |_)      (_|   |_)
+
+   "We put cat puns    "Was that
+    in the cat party    strictly
+    script."            necessary?"
+
+                        "Yes."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+         ~~ PUN ACHIEVEMENTS UNLOCKED ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     ,__________________________________,
+    |                                    |
+    |  BEFORE           AFTER            |
+    |  ~~~~~~           ~~~~~            |
+    |  PAUSE_MARKERS -> PAWS_MARKERS     |
+    |  find_parties  -> find_pawrties    |
+    |  party_dir     -> litter_box       |
+    |  display_party -> show_pawrty      |
+    |  is_pause_line -> needs_a_pawse    |
+    |  is_dramatic   -> is_dramaticat    |
+    |  FAST_DELAY    -> PURR_DELAY       |
+    |  SLOW_DELAY    -> KITTEN_DELAY     |
+    |  parser        -> pawrser          |
+    |  lines         -> whiskers         |
+    |  "Now showing" -> "Meow showing"   |
+    |__________________________________|
+
+          /\_/\
+         ( *.* )
+          > o <
+
+    "That's a lot of puns."
+
+    "That's a lot of PAWNS."
+
+    "That's not even how
+     you spell it."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+         /\_/\     /\_/\     /\_/\
+        ( o.o )   ( ^.^ )   ( -.o )
+         > ^ <     > w <     > ~ <
+
+    "find_pawrties    "litter_box
+     is my             is where
+     favorite."        the files
+                       live. It
+                       makes
+                       purrfect
+                       sense."
+
+                               "I hate
+                                all of
+                                you."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+            ~~ CERTIFIED PUNNY ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+    Error messages, before and after:
+
+    BEFORE:
+    "No cat parties found."
+
+    AFTER:
+    "No cat pawrties found.
+     Make some changes furst!"
+
+    BEFORE:
+    "Error: directory not found"
+
+    AFTER:
+    "Error: directory not found.
+     Cat-astrophe!"
+
+    BEFORE:
+    "Never mind then. Bye!"
+
+    AFTER:
+    "Never mind then.
+     See mew later!"
+
+          /\_/\
+         ( ^.^ )
+          > w <
+         / | | \
+
+    "The error messages are now
+     friendlier AND worse.
+     A rare achievement."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+      A BRIEF TAXONOMY OF CAT PUNS
+      EMPLOYED IN THIS REFACTORING:
+
+      pawrty   = party
+      pawse    = pause
+      paws     = pause (alternate)
+      furst    = first
+      fur      = for
+      mew      = you
+      meow     = now
+      purrfect = perfect
+      dramaticat = dramatic
+      litter_box = directory
+      whiskers   = lines of text
+
+          /\_/\
+         ( -.- )
+          > ~ <
+
+    "I think we've covered
+     every paws-ible pun."
+
+    "You just did another one."
+
+    "I can't stop."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+             ~~ NAP TIME ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\         /\_/\
+       ( -.- )       ( -.- )
+        > ~ <  zzz    > ~ <
+     __|     |_______|     |__
+    |   dreaming of          |
+    |   impurrable code      |
+    |   and purrfect puns... |
+    |________________________|
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+            ~~~~|||~~~~
+           /           \
+          |  YOU'VE GOT |
+          |  TO BE      |
+          |  KITTEN ME  |
+           \           /
+            ~~~~~~~~~~~
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.

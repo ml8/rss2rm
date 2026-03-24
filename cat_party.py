@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Cat Party Typewriter - displays cat party files line by line.
+Cat Pawrty Typewriter - displays cat party files line by line.
 
 Usage:
-    python3 cat_party.py              # show the latest party
-    python3 cat_party.py --rewind     # pick from past parties
-    python3 cat_party.py --rewind 1   # show the 2nd most recent party
+    python3 cat_party.py              # show the latest pawrty
+    python3 cat_party.py --rewind     # pick from past pawrties
+    python3 cat_party.py --rewind 1   # show the 2nd most recent pawrty
 """
 
 import argparse
@@ -14,7 +14,8 @@ import os
 import sys
 import time
 
-PAUSE_MARKERS = [
+# Lines containing these strings trigger a pawse for dramatic effect.
+PAWS_MARKERS = [
     "Time to celebrate",
     "WELCOME TO",
     "prepare the streamers",
@@ -26,120 +27,120 @@ PAUSE_MARKERS = [
     "DIRECTORY TOUR",
     "NAP TIME",
     "THE END",
-    # drop-pandoc party
     "A Dependency Removal Party",
     "THE GREAT UNINSTALLING",
     "THINGS PANDOC DID",
     "DOCKERFILE DIET",
     "MOMENT OF SILENCE",
     "THE NEW COMMAND",
+    "THE GREAT REFACTORING",
+    "PUN ACHIEVEMENTS",
+    "CERTIFIED PUNNY",
 ]
 
-FAST_DELAY = 0.03
-SLOW_DELAY = 0.06
+PURR_DELAY = 0.03    # seconds per line (normal speed)
+KITTEN_DELAY = 0.06  # slower for dramatic meow-ments
 
 
-def find_parties(party_dir):
-    """Return party files sorted oldest-first."""
-    pattern = os.path.join(party_dir, "*.txt")
-    files = sorted(glob.glob(pattern))
-    return files
+def find_pawrties(litter_box):
+    """Return pawrty files sorted oldest-first."""
+    paw_print = os.path.join(litter_box, "*.txt")
+    return sorted(glob.glob(paw_print))
 
 
-def is_pause_line(line):
-    for marker in PAUSE_MARKERS:
+def needs_a_pawse(line):
+    """Check if this line should trigger a pawse."""
+    for marker in PAWS_MARKERS:
         if marker in line:
             return True
     return False
 
 
-def is_dramatic(line):
+def is_dramaticat(line):
+    """Lines with quotes or awards get slower treatment."""
     return line.strip().startswith('"') or "BEST" in line or "MOST" in line
 
 
-def display_party(filepath):
-    """Print a party file with typewriter effect and pauses."""
+def show_pawrty(filepath):
+    """Print a pawrty file with typewriter effect and pawses."""
     with open(filepath, "r") as f:
-        lines = f.readlines()
+        whiskers = f.readlines()
 
     name = os.path.basename(filepath).replace(".txt", "")
     print("\033[2J\033[H", end="")
-    print(f"  Now showing: {name}")
+    print(f"  Meow showing: {name}")
     print()
 
-    for line in lines:
+    for line in whiskers:
         line = line.rstrip("\n")
-        if is_pause_line(line):
+        if needs_a_pawse(line):
             print(line)
             sys.stdout.flush()
             print()
             input("  [Press Enter to continue...] ")
             print()
         else:
-            delay = SLOW_DELAY if is_dramatic(line) else FAST_DELAY
+            delay = KITTEN_DELAY if is_dramaticat(line) else PURR_DELAY
             print(line)
             sys.stdout.flush()
             time.sleep(delay)
 
     print()
-    input("  [Press Enter to exit - thanks for partying with us!] ")
+    input("  [Press Enter to exit - thanks fur partying with us!] ")
     print()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Cat Party Typewriter")
-    parser.add_argument(
+    pawrser = argparse.ArgumentParser(description="Cat Pawrty Typewriter")
+    pawrser.add_argument(
         "--rewind",
         nargs="?",
         const=-1,
         type=int,
         metavar="N",
         help="Go back in time. No argument: pick from a list. "
-             "N: show the Nth oldest party (0 = oldest).",
+             "N: show the Nth oldest pawrty (0 = oldest).",
     )
-    args = parser.parse_args()
+    args = pawrser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    party_dir = os.path.join(script_dir, "cat_party")
+    litter_box = os.path.join(script_dir, "cat_party")
 
-    if not os.path.isdir(party_dir):
-        print(f"Error: {party_dir} not found")
+    if not os.path.isdir(litter_box):
+        print(f"Error: {litter_box} not found. Cat-astrophe!")
         sys.exit(1)
 
-    parties = find_parties(party_dir)
-    if not parties:
-        print("No cat parties found. Make some changes first!")
+    pawrties = find_pawrties(litter_box)
+    if not pawrties:
+        print("No cat pawrties found. Make some changes furst!")
         sys.exit(1)
 
     if args.rewind is None:
-        # Default: show the latest party
-        display_party(parties[-1])
+        show_pawrty(pawrties[-1])
     elif args.rewind == -1:
-        # Interactive: pick from a list
         print()
-        print("  === Cat Party Time Machine ===")
+        print("  === Cat Pawrty Time Machine ===")
         print()
-        for i, p in enumerate(parties):
+        for i, p in enumerate(pawrties):
             name = os.path.basename(p).replace(".txt", "")
-            label = "(oldest)" if i == 0 else "(latest)" if i == len(parties) - 1 else ""
+            label = "(oldest)" if i == 0 else "(latest)" if i == len(pawrties) - 1 else ""
             print(f"    {i}: {name}  {label}")
         print()
         try:
-            choice = int(input("  Pick a party number: "))
+            choice = int(input("  Pick a pawrty number: "))
         except (ValueError, EOFError):
-            print("  Never mind then. Bye!")
+            print("  Never mind then. See mew later!")
             return
-        if 0 <= choice < len(parties):
-            display_party(parties[choice])
+        if 0 <= choice < len(pawrties):
+            show_pawrty(pawrties[choice])
         else:
-            print(f"  No party #{choice}. We only have {len(parties)}.")
+            print(f"  No pawrty #{choice}. We only have {len(pawrties)}.")
     else:
-        # Specific index
         idx = args.rewind
-        if 0 <= idx < len(parties):
-            display_party(parties[idx])
+        if 0 <= idx < len(pawrties):
+            show_pawrty(pawrties[idx])
         else:
-            print(f"No party #{idx}. We have {len(parties)} parties (0-{len(parties)-1}).")
+            print(f"No pawrty #{idx}. We have {len(pawrties)} pawrties (0-{len(pawrties)-1}).")
             sys.exit(1)
 
 
