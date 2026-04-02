@@ -1,0 +1,63 @@
+
+         _______________________________________________
+        |                                               |
+        |     CODE AUDIT REFACTORING PAWRTY!            |
+        |_______________________________________________|
+
+                /\_____/\
+               /  o   o  \
+              ( ==  ^  == )        "We cleaned up
+               )         (         13 decode sites,
+              (           )        20+ encode sites,
+             ( (  )   (  ) )       and 0 regressions!"
+            (__(__)___(__)__)
+
+     The kittens gathered around the freshly linted codebase...
+
+        ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~
+
+    /\  /\     "decodeJSON and writeJSON --
+   (  ..  )     two helpers to rule them all"
+    )    (                    /\_/\
+   (  ><  )                  ( o.o )
+    ) __ (     ___            > ^ <
+   (______)   |   \___       /|   |\
+     |  |     |       \     (_|   |_)
+     |  |     |  JSON  |
+     |__|     |_______|
+
+        ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~
+
+             /\_/\
+            ( -.- )    "s.db is for auth.
+             > ~ <      s.svc is for everything else.
+            /|   |\     The Service interface is complete."
+           (_|   |_)
+
+    .--.  .--.  .--.  .--.  .--.  .--.  .--.  .--.
+    `--'  `--'  `--'  `--'  `--'  `--'  `--'  `--'
+
+         /\  /\
+        (  oo  )    "errors.Is() > strings.Contains()"
+         (    )
+         / vv \      The 401 string check is no more.
+        /      \     Transport.ErrUnauthorized reigns.
+       (________)
+
+        ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~  ~
+
+              Summary of the pawrty:
+              - decodeJSON: 13 handlers cleaned up
+              - writeJSON: 20+ responses with Content-Type
+              - Service interface: 3 methods added
+              - errors.Is() replaces string matching
+              - Delete() methods documented
+              - All tests pass. All vets clean.
+
+         /\  /\        /\  /\        /\  /\
+        ( o.o )      ( ^.^ )      ( -.o )
+         > ^ <        > ~ <        > ^ <
+        _/| |\      _/| |\      _/| |\
+       |_____/     |_____/     |_____/
+
+    "Less boilerplate, more naps." -- Senior Cat Engineer

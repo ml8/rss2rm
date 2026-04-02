@@ -201,8 +201,11 @@ func (d *NotionDestination) buildPageRequest(title, feedName string) map[string]
 	return pageData
 }
 
+// Delete is a no-op. Notion deletion is not implemented, so retention
+// cleanup will consider old deliveries removed even though the pages
+// remain on Notion.
 func (d *NotionDestination) Delete(ctx context.Context, remotePath string) error {
-	return nil // Notion deletion not supported
+	return nil
 }
 
 // TestConnection verifies the Notion connection.

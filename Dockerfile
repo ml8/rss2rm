@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y \
 
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install weasyprint==62.3
+RUN pip install weasyprint==63.1
 
 WORKDIR /app
 

@@ -29,6 +29,8 @@ function showApp(user) {
     fetchDestinations();
     fetchDigests();
     fetchDeliveries();
+    fetchWebhooks();
+    populateArticleDigestSelect();
     initSSE();
 }
 
@@ -453,6 +455,155 @@ function renderDeliveries(deliveries) {
     }).join('');
 }
 
+// --- Send Article ---
+
+document.getElementById('sendArticleForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const title = document.getElementById('articleTitle').value;
+    const url = document.getElementById('articleUrl').value;
+    const content = document.getElementById('articleContent').value;
+    const directory = document.getElementById('articleDirectory').value;
+    const digestId = document.getElementById('articleDigest').value;
+
+    if (!url && !content) {
+        showToast('URL or content is required', 'error');
+        return;
+    }
+
+    const body = {};
+    if (title) body.title = title;
+    if (url) body.url = url;
+    if (content) body.content = content;
+    if (directory) body.directory = directory;
+    if (digestId) body.digest_id = digestId;
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = digestId ? 'Queuing...' : 'Sending...';
+
+    try {
+        const response = await fetch(`${API_BASE}/articles`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        showToast(result.status === 'queued' ? `Queued: ${result.title}` : `Delivered: ${result.title}`);
+        document.getElementById('sendArticleForm').reset();
+        if (digestId) fetchDigests();
+        else fetchDeliveries();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    } finally {
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Send';
+    }
+});
+
+function populateArticleDigestSelect() {
+    const select = document.getElementById('articleDigest');
+    try {
+        fetch(`${API_BASE}/digests`).then(r => r.json()).then(digests => {
+            const options = (digests || []).map(d => `<option value="${d.ID}">${escapeHtml(d.Name)}</option>`).join('');
+            select.innerHTML = `<option value="">Deliver immediately</option>${options}`;
+        });
+    } catch (e) { /* ignore */ }
+}
+
+// --- Webhooks ---
+
+const webhookList = document.getElementById('webhookList');
+
+async function fetchWebhooks() {
+    try {
+        const response = await fetch(`${API_BASE}/webhooks`);
+        if (!response.ok) throw new Error('Failed to fetch webhooks');
+        const webhooks = await response.json();
+        renderWebhooks(webhooks);
+        populateWebhookDigestSelect();
+    } catch (err) {
+        console.warn('Could not fetch webhooks:', err);
+        webhookList.innerHTML = `<tr><td colspan="5">Error loading webhooks</td></tr>`;
+    }
+}
+
+function renderWebhooks(webhooks) {
+    if (!webhooks || webhooks.length === 0) {
+        webhookList.innerHTML = `<tr><td colspan="4">No webhooks configured</td></tr>`;
+        return;
+    }
+
+    const baseUrl = window.location.origin;
+    webhookList.innerHTML = webhooks.map(w => {
+        let configSummary = '—';
+        try {
+            const cfg = JSON.parse(w.Config || '{}');
+            const parts = [];
+            if (cfg.digest_id) parts.push(`digest: ${cfg.digest_id.substring(0, 8)}…`);
+            if (cfg.directory) parts.push(`dir: ${cfg.directory}`);
+            configSummary = parts.length ? parts.join(', ') : 'default destination';
+        } catch (e) {
+            configSummary = 'default destination';
+        }
+
+        return `
+        <tr>
+            <td>${escapeHtml(w.Type)}</td>
+            <td><small><code>${baseUrl}/api/v1/webhook/miniflux</code></small></td>
+            <td><small>${configSummary}</small></td>
+            <td><button class="btn-sm outline secondary" onclick="removeWebhook('${w.ID}')">Remove</button></td>
+        </tr>`;
+    }).join('');
+}
+
+async function populateWebhookDigestSelect() {
+    const select = document.getElementById('webhookDigest');
+    try {
+        const response = await fetch(`${API_BASE}/digests`);
+        if (!response.ok) return;
+        const digests = await response.json();
+        const options = digests.map(d => `<option value="${d.ID}">${escapeHtml(d.Name)}</option>`).join('');
+        select.innerHTML = `<option value="">Deliver immediately</option>${options}`;
+    } catch (e) { /* ignore */ }
+}
+
+document.getElementById('addWebhookForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const type = document.getElementById('webhookType').value;
+    const secret = document.getElementById('webhookSecret').value;
+    const digestId = document.getElementById('webhookDigest').value;
+    const directory = document.getElementById('webhookDirectory').value;
+
+    const config = {};
+    if (digestId) config.digest_id = digestId;
+    if (directory) config.directory = directory;
+
+    try {
+        const response = await fetch(`${API_BASE}/webhooks`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type, secret, config: JSON.stringify(config) }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        showToast('Webhook created');
+        document.getElementById('addWebhookForm').reset();
+        fetchWebhooks();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+});
+
+async function removeWebhook(id) {
+    try {
+        await fetch(`${API_BASE}/webhooks/${id}`, { method: 'DELETE' });
+        showToast('Webhook removed');
+        fetchWebhooks();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
 function escapeHtml(text) {
     if (!text) return '';
     return text
@@ -733,6 +884,7 @@ function renderDigests(digests) {
                 </div>
             </header>
             <div id="digest-feeds-${d.ID}">Loading feeds...</div>
+            <div id="digest-pending-${d.ID}"></div>
             <div class="digest-add-controls">
                 <select id="digest-add-feed-${d.ID}" class="digest-add-select">
                     <option value="">Add feed...</option>
@@ -753,7 +905,10 @@ function renderDigests(digests) {
     }).join('');
 
     // Load feeds for each digest
-    digests.forEach(d => loadDigestFeeds(d.ID));
+    digests.forEach(d => {
+        loadDigestFeeds(d.ID);
+        loadDigestPending(d.ID);
+    });
 }
 
 async function loadDigestFeeds(digestId) {
@@ -785,6 +940,26 @@ async function loadDigestFeeds(digestId) {
         const container = document.getElementById(`digest-feeds-${digestId}`);
         if (container) container.innerHTML = '<small>Error loading feeds</small>';
     }
+}
+
+async function loadDigestPending(digestId) {
+    try {
+        const response = await fetch(`${API_BASE}/digests/${digestId}/pending`);
+        if (!response.ok) return;
+        const entries = await response.json();
+        const container = document.getElementById(`digest-pending-${digestId}`);
+        if (!entries || entries.length === 0) {
+            container.innerHTML = '';
+            return;
+        }
+        container.innerHTML = `<details><summary><small>${entries.length} article${entries.length === 1 ? '' : 's'} queued for next digest</small></summary>
+            <ul>${entries.map(e => {
+                const title = e.url
+                    ? `<a href="${escapeHtml(e.url)}" target="_blank" class="secondary">${escapeHtml(e.title)}</a>`
+                    : escapeHtml(e.title);
+                return `<li><small>${title} · ${formatDate(e.published)}</small></li>`;
+            }).join('')}</ul></details>`;
+    } catch (err) { /* ignore */ }
 }
 
 function handleAddFeedToDigest(digestId) {
@@ -1113,6 +1288,7 @@ function initSSE() {
 // Expose functions to window for HTML onclick attributes
 window.switchDestTab = switchDestTab;
 window.updateDestFormFields = updateDestFormFields;
+window.removeWebhook = removeWebhook;
 
 // Init — check auth first, then load data
 checkAuth();

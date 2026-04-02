@@ -145,8 +145,11 @@ func (d *DropboxDestination) Upload(ctx context.Context, filePath string, target
 	return dropboxPath, nil
 }
 
+// Delete is a no-op. Dropbox deletion is not implemented, so retention
+// cleanup will consider old deliveries removed even though the files
+// remain on Dropbox.
 func (d *DropboxDestination) Delete(ctx context.Context, remotePath string) error {
-	return nil // Dropbox deletion not supported
+	return nil
 }
 
 // TestConnection verifies the Dropbox connection.

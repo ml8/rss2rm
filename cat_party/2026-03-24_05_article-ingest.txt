@@ -1,0 +1,178 @@
+
+        ~* THE INGEST PAWRTY *~
+     Articles Can Come From Anywhere!
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      Miniflux, Webhooks, and Beyond
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\          /\_/\
+          ( o.o )        ( ^.^ )
+           > ^ <          > ~ <
+          /|   |\        /|   |\
+         (_|   |_)      (_|   |_)
+
+  "We used to only     "Now we accept
+   eat RSS."            walk-ins."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+       ~~ THE GREAT DECOUPLING ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     BEFORE:
+
+     RSS Feed ─── rss2rm ───> reMarkable
+     (that's it)
+
+
+     AFTER:
+
+     RSS Feed ──┐
+                 │
+     Miniflux ──┤
+       webhook  │
+                ├── rss2rm ───> reMarkable
+     curl ──────┤              (or email)
+                │              (or dropbox)
+     n8n ───────┤              (or notion)
+                │              (or anywhere)
+     browser ───┘
+     extension
+
+          /\_/\
+         ( *.* )
+          > o <
+
+    "We are now a delivery pipeline,
+     not just a feed reader."
+
+    "The insight was separating
+     reading from delivering."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+        ~~ WHAT WE BUILT TODAY ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     ,__________________________________,
+    |                                    |
+    |  POST /api/v1/articles             |
+    |    "Here's an article, deliver it" |
+    |                                    |
+    |  POST /api/v1/webhook/miniflux     |
+    |    "Miniflux saved an entry"       |
+    |                                    |
+    |  GET/POST/DELETE /api/v1/webhooks  |
+    |    "Manage your webhook configs"   |
+    |                                    |
+    |  entries.content TEXT column        |
+    |    "Store content for digests"     |
+    |                                    |
+    |  webhooks table + CRUD + web UI    |
+    |    "Full stack, fur real"          |
+    |__________________________________|
+
+          /\_/\     /\_/\
+         ( ^.^ )   ( ^.^ )
+          > w <     > w <
+
+    "637 new lines across 5 files."
+    "And they all compile."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+    ~~ THE VIRTUAL FEED ARCHITECTURE ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+    Q: How does an ingested article
+       join a digest?
+
+    A: Through a virtual feed!
+
+       _ingest:abc123  (hidden feed)
+           |
+           v
+       digest_feeds (M:N join)
+           |
+           v
+       digest generation picks it up
+           |
+           v
+       combined PDF with TOC
+
+          /\_/\
+         ( o.o )
+          > ^ <
+
+    "It's feeds all the way down,"
+    says Professor Whiskers.
+
+    "Except when it's webhooks
+     all the way up."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+       ~~ THE HMAC SIGNATURE DANCE ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+    Miniflux:                 rss2rm:
+    
+    "I have an article!"      
+            |                 
+      HMAC-SHA256(body,       
+        secret)               
+            |                 
+      X-Miniflux-Signature    
+      ─────────────────>      "Let me check
+                               all my webhook
+                               secrets..."
+                              
+                              "Found a match!"
+                              
+                              *delivers article*
+
+          /\_/\               /\_/\
+         ( ^.^ )             ( ^.^ )
+          > w <               > w <
+
+    "Trust but verify,"
+    say the security kittens.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+             ~~ NAP TIME ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\         /\_/\
+       ( -.- )       ( -.- )
+        > ~ <  zzz    > ~ <
+     __|     |_______|     |__
+    |   dreaming of          |
+    |   webhook payloads     |
+    |   and HMAC secrets     |
+    |   and virtual feeds    |
+    |   and content columns  |
+    |________________________|
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+            ~~~~|||~~~~
+           /           \
+          |  SAVE IT    |
+          |  IN         |
+          |  MINIFLUX   |
+           \           /
+            ~~~~~~~~~~~
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.

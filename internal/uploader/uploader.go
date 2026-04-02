@@ -5,6 +5,7 @@ package uploader
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -233,7 +234,7 @@ func (c *Client) Upload(filePath string, targetDirName string) (string, string, 
 	}
 
 	// Check if it's a 401 error
-	if !strings.Contains(err.Error(), "401") {
+	if !errors.Is(err, transport.ErrUnauthorized) {
 		return "", "", err
 	}
 

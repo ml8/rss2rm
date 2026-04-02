@@ -12,7 +12,7 @@
 8. Keep `AGENTS.md`, `README.md`, and `docs/README.md` up to date when making significant changes.
 9. Do not push to GitHub.
 10. Do not make git commits. Leave all changes unstaged for human review.
-11. Celebrate major changes with a cat party. Add a dated `.txt` file to `cat_party/` (e.g., `2026-03-24_feature-name.txt`). ASCII art, kittens, 80 columns max. Run with `python3 cat_party.py`.
+11. Celebrate major changes with a cat party. Add a dated `.txt` file to `cat_party/` (e.g., `2026-03-24_01_feature-name.txt`). Use a two-digit sequence number after the date for ordering. ASCII art, kittens, 80 columns max. Run with `python3 cat_party.py`.
 
 ## Build & Test
 
@@ -35,7 +35,7 @@ CGO is required for SQLite (`github.com/mattn/go-sqlite3`). MySQL mode (`--db-dr
 
 ## Architecture
 
-Monolithic Go binary with two modes: CLI and HTTP server. Pipeline: RSS fetch → readability extraction → HTML → PDF (weasyprint) → upload to destination.
+Monolithic Go binary with two modes: CLI and HTTP server. Pipeline: RSS fetch → readability extraction → HTML → PDF (weasyprint) → upload to destination. Also accepts articles via API ingest or Miniflux webhooks.
 
 ### Package Structure
 
@@ -93,9 +93,10 @@ feeds (id TEXT PK, url, name, last_polled, active, backfill, user_id)
 feed_delivery (feed_id TEXT PK, directory, destination_id, last_delivered_id, retain, user_id)
 digests (id TEXT PK, name, directory, schedule, destination_id, last_generated, last_delivered_id, active, retain, user_id)
 digest_feeds (digest_id, feed_id) -- M:N join
-entries (id INTEGER PK auto-increment, feed_id, entry_id, title, url, published, rendered, user_id)
+entries (id INTEGER PK auto-increment, feed_id, entry_id, title, url, published, rendered, content, user_id)
 delivered_files (id INTEGER PK, user_id, delivery_type, delivery_ref, entry_id, remote_path, destination_id, delivered_at)
 destinations (id TEXT PK, name, type, config, is_default, user_id)
+webhooks (id TEXT PK, user_id, type, secret, config, active)
 users (id TEXT PK, email, password_hash, verified, verify_token, verify_expires, created_at)
 sessions (token TEXT PK, user_id, created_at, expires_at)
 settings (key TEXT PK, value)

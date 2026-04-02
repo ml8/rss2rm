@@ -1,0 +1,84 @@
+
+     ~* THE PENDING QUEUE PAWRTY *~
+      Now You Can See What's Coming
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+       Digest Visibility, At Last
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\
+          ( o.o )
+           > ^ <
+          /|   |\
+         (_|   |_)
+
+    "3 articles queued for next digest"
+
+    *clicks to expand*
+
+    "Oh look, there they are."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+     ~~ WHAT CHANGED IN THIS UPDATE ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     NEW API:
+     GET /api/v1/digests/{id}/pending
+
+     Returns articles waiting for
+     the next digest generation.
+
+     NEW UI:
+     Each digest card shows a
+     collapsible list of queued
+     articles with titles and dates.
+
+     ALSO FIXED:
+     - removeWebhook() exposed to
+       window (Vite module scoping)
+     - mysql-connect.sh script for
+       database access
+     - Raw SQL moved behind DB
+       interface (GetActiveWebhooksByType)
+
+          /\_/\     /\_/\
+         ( ^.^ )   ( ^.^ )
+          > w <     > w <
+
+    "Full stack," says Mittens.
+    "Fur real," says Byte.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+             ~~ NAP TIME ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\         /\_/\
+       ( -.- )       ( -.- )
+        > ~ <  zzz    > ~ <
+     __|     |_______|     |__
+    |   dreaming of          |
+    |   pending articles     |
+    |   and collapsible      |
+    |   UI elements...       |
+    |________________________|
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+            ~~~~|||~~~~
+           /           \
+          |  7 PAWRTIES |
+          |  AND        |
+          |  COUNTING   |
+           \           /
+            ~~~~~~~~~~~
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.

@@ -61,6 +61,16 @@ type Destination struct {
 	UserID    string
 }
 
+// Webhook represents a configured incoming webhook (e.g., Miniflux).
+type Webhook struct {
+	ID            string
+	UserID        string
+	Type          string // "miniflux"
+	Secret        string // HMAC secret for signature validation
+	Config        string // JSON blob with type-specific config (e.g., digest_id, directory)
+	Active        bool
+}
+
 // Entry represents a single article fetched from a feed.
 type Entry struct {
 	ID        int64
@@ -70,6 +80,7 @@ type Entry struct {
 	URL       string
 	Published time.Time
 	Rendered  string // path to rendered PDF, empty if not yet rendered
+	Content   string // stored HTML content (used for ingested articles)
 	UserID    string
 }
 
@@ -192,6 +203,7 @@ func (d *DB) initSchema() error {
 			url TEXT,
 			published TIMESTAMP,
 			rendered TEXT,
+			content TEXT,
 			user_id TEXT,
 			UNIQUE(feed_id, entry_id),
 			FOREIGN KEY(feed_id) REFERENCES feeds(id)
@@ -252,6 +264,15 @@ func (d *DB) initSchema() error {
 			destination_id TEXT NOT NULL,
 			delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS webhooks (
+			id VARCHAR(255) PRIMARY KEY,
+			user_id VARCHAR(255) NOT NULL,
+			type VARCHAR(255) NOT NULL,
+			secret VARCHAR(255) NOT NULL,
+			config TEXT,
+			active BOOLEAN DEFAULT 1,
+			FOREIGN KEY(user_id) REFERENCES users(id)
+		)`,
 	}
 
 	// Create settings first for version check
@@ -265,7 +286,11 @@ func (d *DB) initSchema() error {
 		}
 	}
 
-	d.upsertSetting("schema_version", "5")
+	d.upsertSetting("schema_version", "6")
+
+	// Migration: add content column to entries (v6)
+	d.Exec("ALTER TABLE entries ADD COLUMN content TEXT")
+
 	return nil
 }
 
@@ -435,7 +460,7 @@ func (db *DB) UpdateFeed(userID string, f Feed) error {
 }
 
 func (db *DB) GetActiveFeeds(userID string) ([]Feed, error) {
-	query := `SELECT id, url, name, last_polled, active, backfill, user_id FROM feeds WHERE active = 1 AND user_id = ?`
+	query := `SELECT id, url, name, last_polled, active, backfill, user_id FROM feeds WHERE active = 1 AND url NOT LIKE '_ingest:%' AND user_id = ?`
 	rows, err := db.Query(query, userID)
 	if err != nil {
 		return nil, err
@@ -517,17 +542,17 @@ func (db *DB) HasEntry(userID string, feedID string, entryID string) (bool, erro
 
 func (db *DB) CreateEntry(userID string, e Entry) error {
 	_, err := db.Exec(`
-		INSERT INTO entries (feed_id, entry_id, title, url, published, rendered, user_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, e.FeedID, e.EntryID, e.Title, e.URL, e.Published, e.Rendered, userID)
+		INSERT INTO entries (feed_id, entry_id, title, url, published, rendered, content, user_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, e.FeedID, e.EntryID, e.Title, e.URL, e.Published, e.Rendered, e.Content, userID)
 	return wrapUniqueErr(err)
 }
 
 func (db *DB) GetEntry(userID string, feedID string, entryID string) (*Entry, error) {
-	query := `SELECT id, feed_id, entry_id, title, url, published, COALESCE(rendered, ''), user_id FROM entries WHERE feed_id = ? AND entry_id = ? AND user_id = ?`
+	query := `SELECT id, feed_id, entry_id, title, url, published, COALESCE(rendered, ''), COALESCE(content, ''), user_id FROM entries WHERE feed_id = ? AND entry_id = ? AND user_id = ?`
 	row := db.QueryRow(query, feedID, entryID, userID)
 	var e Entry
-	if err := row.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered, &e.UserID); err != nil {
+	if err := row.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered, &e.Content, &e.UserID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -590,7 +615,7 @@ func (db *DB) AdvanceFeedDelivery(feedID string, entryID int64) error {
 
 // GetUndeliveredEntries returns entries newer than lastDeliveredID for a feed.
 func (db *DB) GetUndeliveredEntries(feedID string, lastDeliveredID int64) ([]Entry, error) {
-	query := `SELECT id, feed_id, entry_id, title, url, published, COALESCE(rendered, '') FROM entries WHERE feed_id = ? AND id > ? ORDER BY id`
+	query := `SELECT id, feed_id, entry_id, title, url, published, COALESCE(rendered, ''), COALESCE(content, '') FROM entries WHERE feed_id = ? AND id > ? ORDER BY id`
 	rows, err := db.Query(query, feedID, lastDeliveredID)
 	if err != nil {
 		return nil, err
@@ -600,7 +625,7 @@ func (db *DB) GetUndeliveredEntries(feedID string, lastDeliveredID int64) ([]Ent
 	var entries []Entry
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered); err != nil {
+		if err := rows.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered, &e.Content); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
@@ -801,7 +826,7 @@ func (db *DB) GetDigestsForFeed(userID string, feedID string) ([]Digest, error) 
 // GetNewEntriesForDigest returns entries newer than lastDeliveredID for all feeds in a digest.
 func (db *DB) GetNewEntriesForDigest(digestID string, lastDeliveredID int64) ([]Entry, error) {
 	query := `
-		SELECT e.id, e.feed_id, e.entry_id, e.title, e.url, e.published, COALESCE(e.rendered, '')
+		SELECT e.id, e.feed_id, e.entry_id, e.title, e.url, e.published, COALESCE(e.rendered, ''), COALESCE(e.content, '')
 		FROM entries e
 		JOIN digest_feeds df ON e.feed_id = df.feed_id
 		WHERE df.digest_id = ? AND e.id > ?
@@ -816,7 +841,7 @@ func (db *DB) GetNewEntriesForDigest(digestID string, lastDeliveredID int64) ([]
 	entries := []Entry{}
 	for rows.Next() {
 		var e Entry
-		if err := rows.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered); err != nil {
+		if err := rows.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered, &e.Content); err != nil {
 			return nil, err
 		}
 		entries = append(entries, e)
@@ -1067,6 +1092,116 @@ func (db *DB) GetRecentDeliveries(userID string, limit int) ([]DeliveryLogEntry,
 	return entries, nil
 }
 
+// --- Webhook methods ---
+
+// InsertWebhook creates a new webhook and generates a random secret.
+// InsertWebhook creates a new webhook. The caller must provide the secret
+// (e.g., copied from the external service like Miniflux).
+func (db *DB) InsertWebhook(userID string, w Webhook) (string, error) {
+	w.ID = uuid.New().String()
+	w.UserID = userID
+	_, err := db.Exec(`INSERT INTO webhooks (id, user_id, type, secret, config, active) VALUES (?, ?, ?, ?, ?, ?)`,
+		w.ID, w.UserID, w.Type, w.Secret, w.Config, w.Active)
+	if err != nil {
+		return "", err
+	}
+	return w.ID, nil
+}
+
+// GetWebhooks returns all webhooks for a user.
+func (db *DB) GetWebhooks(userID string) ([]Webhook, error) {
+	rows, err := db.Query(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE user_id = ?`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []Webhook
+	for rows.Next() {
+		var w Webhook
+		var config sql.NullString
+		if err := rows.Scan(&w.ID, &w.UserID, &w.Type, &w.Secret, &config, &w.Active); err != nil {
+			return nil, err
+		}
+		if config.Valid {
+			w.Config = config.String
+		}
+		webhooks = append(webhooks, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return webhooks, nil
+}
+
+// GetWebhookByID returns a single webhook.
+func (db *DB) GetWebhookByID(userID, id string) (*Webhook, error) {
+	var w Webhook
+	var config sql.NullString
+	err := db.QueryRow(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE id = ? AND user_id = ?`, id, userID).
+		Scan(&w.ID, &w.UserID, &w.Type, &w.Secret, &config, &w.Active)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if config.Valid {
+		w.Config = config.String
+	}
+	return &w, nil
+}
+
+// GetWebhookBySecret finds an active webhook by its HMAC secret.
+func (db *DB) GetWebhookBySecret(secret string) (*Webhook, error) {
+	var w Webhook
+	var config sql.NullString
+	err := db.QueryRow(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE secret = ? AND active = 1`, secret).
+		Scan(&w.ID, &w.UserID, &w.Type, &w.Secret, &config, &w.Active)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if config.Valid {
+		w.Config = config.String
+	}
+	return &w, nil
+}
+
+// GetActiveWebhooksByType returns all active webhooks of a given type.
+func (db *DB) GetActiveWebhooksByType(webhookType string) ([]Webhook, error) {
+	rows, err := db.Query(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE type = ? AND active = 1`, webhookType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var webhooks []Webhook
+	for rows.Next() {
+		var w Webhook
+		var config sql.NullString
+		if err := rows.Scan(&w.ID, &w.UserID, &w.Type, &w.Secret, &config, &w.Active); err != nil {
+			return nil, err
+		}
+		if config.Valid {
+			w.Config = config.String
+		}
+		webhooks = append(webhooks, w)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return webhooks, nil
+}
+
+// DeleteWebhook removes a webhook.
+func (db *DB) DeleteWebhook(userID, id string) error {
+	_, err := db.Exec(`DELETE FROM webhooks WHERE id = ? AND user_id = ?`, id, userID)
+	return err
+}
+
 // UpdateUserPassword updates a user's password with a new bcrypt hash.
 func (db *DB) UpdateUserPassword(userID string, newPassword string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
@@ -1092,6 +1227,7 @@ func (db *DB) DeleteUser(userID string) error {
 	tx.Exec("DELETE FROM digests WHERE user_id = ?", userID)
 	tx.Exec("DELETE FROM feeds WHERE user_id = ?", userID)
 	tx.Exec("DELETE FROM destinations WHERE user_id = ?", userID)
+	tx.Exec("DELETE FROM webhooks WHERE user_id = ?", userID)
 	tx.Exec("DELETE FROM sessions WHERE user_id = ?", userID)
 	tx.Exec("DELETE FROM users WHERE id = ?", userID)
 

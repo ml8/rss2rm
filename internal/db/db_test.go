@@ -478,3 +478,140 @@ if len(entries) != 0 {
 t.Fatalf("expected 0 entries in digest d1 after feed removed, got %d", len(entries))
 }
 }
+
+func TestEntryContent(t *testing.T) {
+	db := setupTestDB(t)
+
+	feedID, _ := db.InsertFeed(testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true})
+
+	// Entry without content
+	db.CreateEntry(testUserID, Entry{
+		FeedID: feedID, EntryID: "no-content", Title: "No Content",
+		URL: "https://example.com/1", Published: time.Now(),
+	})
+	e, _ := db.GetEntry(testUserID, feedID, "no-content")
+	if e.Content != "" {
+		t.Fatalf("expected empty Content, got %q", e.Content)
+	}
+
+	// Entry with content
+	db.CreateEntry(testUserID, Entry{
+		FeedID: feedID, EntryID: "with-content", Title: "With Content",
+		URL: "https://example.com/2", Published: time.Now(),
+		Content: "<p>Hello world</p>",
+	})
+	e, _ = db.GetEntry(testUserID, feedID, "with-content")
+	if e.Content != "<p>Hello world</p>" {
+		t.Fatalf("expected content '<p>Hello world</p>', got %q", e.Content)
+	}
+
+	// Content should appear in GetUndeliveredEntries
+	entries, _ := db.GetUndeliveredEntries(feedID, 0)
+	found := false
+	for _, entry := range entries {
+		if entry.EntryID == "with-content" && entry.Content == "<p>Hello world</p>" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("content not preserved in GetUndeliveredEntries")
+	}
+
+	// Content should appear in GetNewEntriesForDigest
+	digestID, _ := db.InsertDigest(testUserID, Digest{Name: "Content Digest", Schedule: "07:00", Active: true})
+	db.AddFeedToDigest(digestID, feedID)
+	digestEntries, _ := db.GetNewEntriesForDigest(digestID, 0)
+	found = false
+	for _, entry := range digestEntries {
+		if entry.EntryID == "with-content" && entry.Content == "<p>Hello world</p>" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("content not preserved in GetNewEntriesForDigest")
+	}
+}
+
+func TestWebhookCRUD(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a user for webhook ownership
+	userID, err := db.CreateUser("webhook@test.com", "password")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	// Insert webhook
+	id, err := db.InsertWebhook(userID, Webhook{Type: "miniflux", Secret: "test-hmac-secret", Config: `{"digest_id":"abc"}`, Active: true})
+	if err != nil {
+		t.Fatalf("InsertWebhook: %v", err)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty webhook ID")
+	}
+
+	// List webhooks
+	webhooks, err := db.GetWebhooks(userID)
+	if err != nil {
+		t.Fatalf("GetWebhooks: %v", err)
+	}
+	if len(webhooks) != 1 {
+		t.Fatalf("expected 1 webhook, got %d", len(webhooks))
+	}
+	if webhooks[0].Type != "miniflux" {
+		t.Fatalf("expected type=miniflux, got %q", webhooks[0].Type)
+	}
+	if webhooks[0].Secret != "test-hmac-secret" {
+		t.Fatalf("expected secret=test-hmac-secret, got %q", webhooks[0].Secret)
+	}
+	if webhooks[0].Config != `{"digest_id":"abc"}` {
+		t.Fatalf("expected config preserved, got %q", webhooks[0].Config)
+	}
+
+	// Get by ID
+	w, err := db.GetWebhookByID(userID, id)
+	if err != nil {
+		t.Fatalf("GetWebhookByID: %v", err)
+	}
+	if w == nil {
+		t.Fatal("expected webhook, got nil")
+	}
+	if w.ID != id {
+		t.Fatalf("expected ID=%s, got %s", id, w.ID)
+	}
+
+	// Wrong user can't see it
+	w2, _ := db.GetWebhookByID("other-user", id)
+	if w2 != nil {
+		t.Fatal("other user should not see this webhook")
+	}
+
+	// Delete webhook
+	if err := db.DeleteWebhook(userID, id); err != nil {
+		t.Fatalf("DeleteWebhook: %v", err)
+	}
+	webhooks, _ = db.GetWebhooks(userID)
+	if len(webhooks) != 0 {
+		t.Fatalf("expected 0 webhooks after delete, got %d", len(webhooks))
+	}
+}
+
+func TestVirtualFeedFiltering(t *testing.T) {
+	db := setupTestDB(t)
+
+	// Create a normal feed and a virtual feed
+	db.InsertFeed(testUserID, Feed{URL: "https://example.com/real", Name: "Real Feed", Active: true})
+	db.InsertFeed(testUserID, Feed{URL: "_ingest:abc123", Name: "Virtual Feed", Active: true})
+
+	// GetActiveFeeds should only return the real feed
+	feeds, err := db.GetActiveFeeds(testUserID)
+	if err != nil {
+		t.Fatalf("GetActiveFeeds: %v", err)
+	}
+	if len(feeds) != 1 {
+		t.Fatalf("expected 1 active feed (virtual filtered), got %d", len(feeds))
+	}
+	if feeds[0].URL != "https://example.com/real" {
+		t.Fatalf("expected real feed, got %q", feeds[0].URL)
+	}
+}

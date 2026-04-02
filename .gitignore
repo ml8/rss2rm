@@ -29,3 +29,4 @@ web/dist/
 # OS files
 .DS_Store
 deploy/.secrets.env
+*.mine

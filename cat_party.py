@@ -36,6 +36,20 @@ PAWS_MARKERS = [
     "THE GREAT REFACTORING",
     "PUN ACHIEVEMENTS",
     "CERTIFIED PUNNY",
+    # article-ingest party
+    "Articles Can Come From Anywhere",
+    "THE GREAT DECOUPLING",
+    "WHAT WE BUILT TODAY",
+    "VIRTUAL FEED ARCHITECTURE",
+    "HMAC SIGNATURE DANCE",
+    # miniflux-webhook party
+    "After Three Debugging Sessions",
+    "BUGS WE SQUASHED",
+    "THE LEADING SPACE",
+    "THE ROUTE ORDER LESSON",
+    "THE FULL JOURNEY",
+    # pending-queue party
+    "WHAT CHANGED IN THIS UPDATE",
 ]
 
 PURR_DELAY = 0.03    # seconds per line (normal speed)

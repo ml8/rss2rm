@@ -5,9 +5,13 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -92,12 +96,12 @@ type ServerConfig struct {
 
 // Server is the rss2rm HTTP server.
 type Server struct {
-	svc    service.Service
-	db     *db.DB
-	config ServerConfig
-	mux    *http.ServeMux
-	broker *Broker
-	pollMu sync.Mutex
+	svc        service.Service
+	db         *db.DB
+	config     ServerConfig
+	mux        *http.ServeMux
+	broker     *Broker
+	pollMu     sync.Mutex
 	pollActive bool
 }
 
@@ -136,7 +140,7 @@ func (s *Server) registerRoutes() {
 		w.Header().Set("Content-Type", "application/json")
 		if err := s.db.Ping(); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(map[string]string{"status": "unhealthy", "error": err.Error()})
+			writeJSON(w, map[string]string{"status": "unhealthy", "error": err.Error()})
 			return
 		}
 		w.Write([]byte(`{"status":"ok"}`))
@@ -179,11 +183,24 @@ func (s *Server) registerRoutes() {
 	authed.HandleFunc("PUT /api/v1/digests/{id}", s.handleEditDigest)
 	authed.HandleFunc("POST /api/v1/digests/{id}/generate", s.handleGenerateDigest)
 	authed.HandleFunc("GET /api/v1/digests/{id}/feeds", s.handleListDigestFeeds)
+	authed.HandleFunc("GET /api/v1/digests/{id}/pending", s.handleListDigestPending)
 	authed.HandleFunc("POST /api/v1/digests/{id}/feeds", s.handleAddFeedToDigest)
 	authed.HandleFunc("DELETE /api/v1/digests/{digestId}/feeds/{feedId}", s.handleRemoveFeedFromDigest)
 
 	// Deliveries
 	authed.HandleFunc("GET /api/v1/deliveries", s.handleListDeliveries)
+
+	// Article ingest
+	authed.HandleFunc("POST /api/v1/articles", s.handleIngestArticle)
+
+	// Webhooks
+	authed.HandleFunc("GET /api/v1/webhooks", s.handleListWebhooks)
+	authed.HandleFunc("POST /api/v1/webhooks", s.handleAddWebhook)
+	authed.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleRemoveWebhook)
+
+	// Webhook receiver (HMAC-authenticated, not bearer-authenticated)
+	// Must be registered before the /api/v1/ catch-all.
+	s.mux.HandleFunc("POST /api/v1/webhook/miniflux", s.handleMinifluxWebhook)
 
 	// Wrap all authenticated routes
 	s.mux.Handle("/api/v1/", s.requireAuth(authed))
@@ -271,6 +288,22 @@ func requirePathValue(w http.ResponseWriter, r *http.Request, key string) (strin
 	return v, true
 }
 
+// decodeJSON reads JSON from the request body into v. Returns false
+// and writes a 400 response if decoding fails.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// writeJSON encodes v as JSON to w with the correct Content-Type header.
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Check registration policy
 	switch s.config.RegistrationMode {
@@ -287,8 +320,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Email == "" || req.Password == "" {
@@ -340,9 +372,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 
 		log.Printf("[Auth] User registered (pending verification): email=%s id=%s ip=%s", req.Email, id, r.RemoteAddr)
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		writeJSON(w, map[string]interface{}{
 			"status":  "verification_required",
 			"message": "Check your email for a verification link.",
 		})
@@ -367,7 +398,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	session, err := s.db.CreateSession(id)
 	if err != nil {
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]interface{}{"status": "created", "id": id})
+		writeJSON(w, map[string]interface{}{"status": "created", "id": id})
 		return
 	}
 
@@ -380,9 +411,8 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   30 * 24 * 60 * 60,
 	})
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status": "created",
 		"token":  session.Token,
 	})
@@ -393,8 +423,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -429,8 +458,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   30 * 24 * 60 * 60,
 	})
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status": "ok",
 		"token":  session.Token,
 	})
@@ -462,8 +490,7 @@ func (s *Server) handleGetCurrentUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"id":    user.ID,
 		"email": user.Email,
 	})
@@ -498,8 +525,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.NewPassword == "" || len(req.NewPassword) < 8 {
@@ -525,7 +551,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[Auth] Password changed: user_id=%s ip=%s", userID, r.RemoteAddr)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "password_changed"})
+	writeJSON(w, map[string]string{"status": "password_changed"})
 }
 
 func (s *Server) handleListFeeds(w http.ResponseWriter, r *http.Request) {
@@ -572,8 +598,7 @@ func (s *Server) handleListFeeds(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, fr)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
 func (s *Server) handleListDestinations(w http.ResponseWriter, r *http.Request) {
@@ -582,13 +607,11 @@ func (s *Server) handleListDestinations(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(dests)
+	writeJSON(w, dests)
 }
 
 func (s *Server) handleListDestinationTypes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(service.RegisteredDestinationTypes())
+	writeJSON(w, service.RegisteredDestinationTypes())
 }
 
 func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
@@ -598,8 +621,7 @@ func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
 		Config    map[string]string `json:"config"`
 		IsDefault bool              `json:"is_default"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -624,7 +646,7 @@ func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "created", "id": id})
+	writeJSON(w, map[string]interface{}{"status": "created", "id": id})
 }
 
 func (s *Server) handleRemoveDestination(w http.ResponseWriter, r *http.Request) {
@@ -649,8 +671,7 @@ func (s *Server) handleEditDestination(w http.ResponseWriter, r *http.Request) {
 		Name   string            `json:"name"`
 		Config map[string]string `json:"config"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -708,7 +729,7 @@ func (s *Server) handleTestDestination(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "message": "Connection successful"})
+	writeJSON(w, map[string]string{"status": "ok", "message": "Connection successful"})
 }
 
 func (s *Server) handleGetAuthURL(w http.ResponseWriter, r *http.Request) {
@@ -745,8 +766,7 @@ func (s *Server) handleGetAuthURL(w http.ResponseWriter, r *http.Request) {
 	state := id
 	authURL := oauthDest.GetAuthURL(oauthRedirectURL(r), state)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"auth_url": authURL})
+	writeJSON(w, map[string]string{"auth_url": authURL})
 }
 
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
@@ -841,8 +861,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		Backfill            int    `json:"backfill"`
 		DeliverIndividually *bool  `json:"deliver_individually,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.URL == "" {
@@ -882,7 +901,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+	writeJSON(w, map[string]string{"status": "created"})
 }
 
 func (s *Server) handleEditFeed(w http.ResponseWriter, r *http.Request) {
@@ -897,8 +916,7 @@ func (s *Server) handleEditFeed(w http.ResponseWriter, r *http.Request) {
 		DeliverIndividually *bool  `json:"deliver_individually,omitempty"`
 		Retain              *int   `json:"retain,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1037,7 +1055,7 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 		URLs     []string `json:"urls"`
 		Backfill int      `json:"backfill"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
@@ -1084,7 +1102,7 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]string{"status": "polling_started"})
+	writeJSON(w, map[string]string{"status": "polling_started"})
 }
 
 func (s *Server) handlePollEvents(w http.ResponseWriter, r *http.Request) {
@@ -1116,7 +1134,6 @@ func (s *Server) handlePollEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
 
 func (s *Server) startBackgroundPoller() {
 	log.Printf("Background polling enabled (interval: %v)", s.config.PollInterval)
@@ -1251,15 +1268,13 @@ func parseSchedule(schedule string) (int, int, error) {
 	return hour, min, nil
 }
 
-
 func (s *Server) handleListDigests(w http.ResponseWriter, r *http.Request) {
 	digests, err := s.svc.ListDigests(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(digests)
+	writeJSON(w, digests)
 }
 
 func (s *Server) handleAddDigest(w http.ResponseWriter, r *http.Request) {
@@ -1269,8 +1284,7 @@ func (s *Server) handleAddDigest(w http.ResponseWriter, r *http.Request) {
 		DestinationID *string `json:"destination_id"`
 		Retain        int     `json:"retain"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.Name == "" {
@@ -1295,7 +1309,7 @@ func (s *Server) handleAddDigest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "created", "id": id})
+	writeJSON(w, map[string]interface{}{"status": "created", "id": id})
 }
 
 func (s *Server) handleEditDigest(w http.ResponseWriter, r *http.Request) {
@@ -1310,8 +1324,7 @@ func (s *Server) handleEditDigest(w http.ResponseWriter, r *http.Request) {
 		Directory string `json:"directory"`
 		Retain    *int   `json:"retain,omitempty"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -1373,8 +1386,43 @@ func (s *Server) handleListDigestFeeds(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(feeds)
+	writeJSON(w, feeds)
+}
+
+// handleListDigestPending returns entries queued for the next digest generation.
+func (s *Server) handleListDigestPending(w http.ResponseWriter, r *http.Request) {
+	id, ok := requirePathValue(w, r, "id")
+	if !ok {
+		return
+	}
+	digest, err := s.svc.GetDigestByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if digest == nil {
+		http.Error(w, "digest not found", http.StatusNotFound)
+		return
+	}
+	entries, err := s.svc.GetNewEntriesForDigest(r.Context(), id, digest.LastDeliveredID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type pendingEntry struct {
+		Title     string `json:"title"`
+		URL       string `json:"url"`
+		Published string `json:"published"`
+	}
+	resp := make([]pendingEntry, 0, len(entries))
+	for _, e := range entries {
+		resp = append(resp, pendingEntry{
+			Title:     e.Title,
+			URL:       e.URL,
+			Published: e.Published.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	writeJSON(w, resp)
 }
 
 func (s *Server) handleAddFeedToDigest(w http.ResponseWriter, r *http.Request) {
@@ -1387,8 +1435,7 @@ func (s *Server) handleAddFeedToDigest(w http.ResponseWriter, r *http.Request) {
 		FeedID         string `json:"feed_id"`
 		AlsoIndividual bool   `json:"also_individual"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	if req.FeedID == "" {
@@ -1402,7 +1449,7 @@ func (s *Server) handleAddFeedToDigest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleRemoveFeedFromDigest(w http.ResponseWriter, r *http.Request) {
@@ -1439,8 +1486,7 @@ func (s *Server) handleGenerateDigest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	writeJSON(w, map[string]interface{}{
 		"status": "ok",
 		"events": events,
 	})
@@ -1478,8 +1524,195 @@ func (s *Server) handleListDeliveries(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, resp)
 }
 
+// handleIngestArticle accepts an article for immediate delivery or digest inclusion.
+func (s *Server) handleIngestArticle(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Title         string `json:"title"`
+		URL           string `json:"url"`
+		Content       string `json:"content"`
+		DestinationID string `json:"destination_id"`
+		Directory     string `json:"directory"`
+		DigestID      string `json:"digest_id"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.URL == "" && req.Content == "" {
+		http.Error(w, "url or content is required", http.StatusBadRequest)
+		return
+	}
+	if req.Title == "" && req.Content == "" {
+		http.Error(w, "title is required when content is not provided", http.StatusBadRequest)
+		return
+	}
 
+	if err := s.svc.DeliverArticle(r.Context(), req.Title, req.URL, req.Content, req.DestinationID, req.Directory, req.DigestID); err != nil {
+		log.Printf("[Ingest] Failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if req.DigestID != "" {
+		writeJSON(w, map[string]string{"status": "queued", "title": req.Title, "digest_id": req.DigestID})
+	} else {
+		writeJSON(w, map[string]string{"status": "delivered", "title": req.Title})
+	}
+}
+
+// --- Webhook CRUD ---
+
+func (s *Server) handleListWebhooks(w http.ResponseWriter, r *http.Request) {
+	webhooks, err := s.svc.ListWebhooks(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if webhooks == nil {
+		webhooks = []db.Webhook{}
+	}
+	writeJSON(w, webhooks)
+}
+
+func (s *Server) handleAddWebhook(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Type   string `json:"type"`
+		Secret string `json:"secret"`
+		Config string `json:"config"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Type == "" {
+		http.Error(w, "type is required", http.StatusBadRequest)
+		return
+	}
+	if req.Type != "miniflux" {
+		http.Error(w, "unsupported webhook type (supported: miniflux)", http.StatusBadRequest)
+		return
+	}
+	if req.Secret == "" {
+		http.Error(w, "secret is required (copy from Miniflux Settings > Integrations > Webhook)", http.StatusBadRequest)
+		return
+	}
+
+	id, err := s.svc.AddWebhook(r.Context(), req.Type, req.Secret, req.Config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the created webhook (including generated secret)
+	webhook, _ := s.svc.GetWebhookByID(r.Context(), id)
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, webhook)
+}
+
+func (s *Server) handleRemoveWebhook(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := s.svc.RemoveWebhook(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- Miniflux webhook receiver ---
+
+// handleMinifluxWebhook receives webhook events from Miniflux.
+// Authentication is via HMAC-SHA256 signature in the X-Miniflux-Signature header.
+func (s *Server) handleMinifluxWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read body", http.StatusBadRequest)
+		return
+	}
+
+	signature := r.Header.Get("X-Miniflux-Signature")
+	if signature == "" {
+		log.Printf("[Webhook] Rejected: missing X-Miniflux-Signature header")
+		http.Error(w, "missing X-Miniflux-Signature header", http.StatusUnauthorized)
+		return
+	}
+
+	// Find the webhook by validating the HMAC against all active miniflux webhooks
+	webhook, err := s.findWebhookBySignature(body, signature)
+	if err != nil || webhook == nil {
+		log.Printf("[Webhook] Rejected: HMAC signature mismatch (sig=%s, err=%v, bodyLen=%d)", signature[:16], err, len(body))
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
+
+	eventType := r.Header.Get("X-Miniflux-Event-Type")
+	if eventType != "save_entry" {
+		// Acknowledge other events without processing
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	var payload struct {
+		Entry struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"entry"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		http.Error(w, "invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	// Parse webhook config for optional digest_id and directory
+	var config struct {
+		DigestID      string `json:"digest_id"`
+		Directory     string `json:"directory"`
+		DestinationID string `json:"destination_id"`
+	}
+	if webhook.Config != "" {
+		json.Unmarshal([]byte(webhook.Config), &config)
+	}
+
+	// Deliver as the webhook's user
+	ctx := context.WithValue(r.Context(), service.UserIDKey, webhook.UserID)
+	if err := s.svc.DeliverArticle(ctx, payload.Entry.Title, payload.Entry.URL, payload.Entry.Content, config.DestinationID, config.Directory, config.DigestID); err != nil {
+		log.Printf("[Webhook] Miniflux delivery failed: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[Webhook] Miniflux: delivered %q for user %s", payload.Entry.Title, webhook.UserID)
+	w.WriteHeader(http.StatusOK)
+}
+
+// findWebhookBySignature validates an HMAC-SHA256 signature against all
+// active miniflux webhooks. Returns the matching webhook or nil.
+// Uses s.db directly because this runs on the unauthenticated webhook
+// path — there is no user context. The query is cross-tenant by design.
+func (s *Server) findWebhookBySignature(body []byte, signature string) (*db.Webhook, error) {
+	sigBytes, err := hex.DecodeString(signature)
+	if err != nil {
+		return nil, fmt.Errorf("invalid signature encoding")
+	}
+
+	webhooks, err := s.db.GetActiveWebhooksByType("miniflux")
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("[Webhook] Checking signature against %d active webhook(s)", len(webhooks))
+
+	for _, w := range webhooks {
+		mac := hmac.New(sha256.New, []byte(w.Secret))
+		mac.Write(body)
+		expected := mac.Sum(nil)
+		expectedHex := hex.EncodeToString(expected)
+		log.Printf("[Webhook] Comparing: got=%s expected=%s (secret=%s...)", signature[:16], expectedHex[:16], w.Secret[:8])
+		if hmac.Equal(expected, sigBytes) {
+			return &w, nil
+		}
+	}
+
+	return nil, nil
+}

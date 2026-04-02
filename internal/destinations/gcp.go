@@ -73,8 +73,11 @@ func (d *GCPDestination) Upload(ctx context.Context, filePath string, targetPath
 	return fmt.Sprintf("gs://%s/%s", d.BucketName, objectName), nil
 }
 
+// Delete is a no-op. GCS deletion is not implemented, so retention
+// cleanup will consider old deliveries removed even though the files
+// remain in the bucket.
 func (d *GCPDestination) Delete(ctx context.Context, remotePath string) error {
-	return nil // GCP deletion not supported
+	return nil
 }
 
 func (d *GCPDestination) TestConnection(ctx context.Context) error {

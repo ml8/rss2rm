@@ -52,7 +52,9 @@ type Service interface {
 	ListDigests(ctx context.Context) ([]db.Digest, error)
 	RemoveDigest(ctx context.Context, id string) error
 	UpdateDigest(ctx context.Context, digest db.Digest) error
+	GetDigestByID(ctx context.Context, id string) (*db.Digest, error)
 	GetDigestsForFeed(ctx context.Context, feedID string) ([]db.Digest, error)
+	GetNewEntriesForDigest(ctx context.Context, digestID string, afterID int64) ([]db.Entry, error)
 	AddFeedToDigest(ctx context.Context, digestID, feedID string, alsoIndividual bool) error
 	RemoveFeedFromDigest(ctx context.Context, digestID, feedID string) error
 	ListDigestFeeds(ctx context.Context, digestID string) ([]db.Feed, error)
@@ -60,6 +62,15 @@ type Service interface {
 
 	// Delivery log
 	ListRecentDeliveries(ctx context.Context, limit int) ([]db.DeliveryLogEntry, error)
+
+	// Article ingest
+	DeliverArticle(ctx context.Context, title, url, content, destID, directory, digestID string) error
+
+	// Webhook management
+	AddWebhook(ctx context.Context, webhookType, secret, config string) (string, error)
+	ListWebhooks(ctx context.Context) ([]db.Webhook, error)
+	GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error)
+	RemoveWebhook(ctx context.Context, id string) error
 }
 
 // EventType identifies the kind of event emitted during feed polling.
@@ -301,8 +312,16 @@ func (s *LocalService) UpdateDigest(ctx context.Context, digest db.Digest) error
 	return s.db.UpdateDigest(UserIDFromContext(ctx), digest)
 }
 
+func (s *LocalService) GetDigestByID(ctx context.Context, id string) (*db.Digest, error) {
+	return s.db.GetDigestByID(UserIDFromContext(ctx), id)
+}
+
 func (s *LocalService) GetDigestsForFeed(ctx context.Context, feedID string) ([]db.Digest, error) {
 	return s.db.GetDigestsForFeed(UserIDFromContext(ctx), feedID)
+}
+
+func (s *LocalService) GetNewEntriesForDigest(ctx context.Context, digestID string, afterID int64) ([]db.Entry, error) {
+	return s.db.GetNewEntriesForDigest(digestID, afterID)
 }
 
 func (s *LocalService) AddFeedToDigest(ctx context.Context, digestID, feedID string, alsoIndividual bool) error {
@@ -372,14 +391,25 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 		log.Printf("[Digest] Rendering article %q for digest %q", entry.Title, digest.Name)
 		onEvent(PollEvent{Type: EventItemFound, ItemTitle: entry.Title, Message: "Rendering for digest"})
 
-		article, err := processor.Process(entry.URL)
-		if err != nil {
-			log.Printf("[Digest] Processing failed for %q: %v", entry.Title, err)
-			onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
-			continue
+		var title, byline, content string
+		if entry.Content != "" {
+			// Use stored content (e.g., from article ingest)
+			title = entry.Title
+			content = entry.Content
+		} else {
+			// Fetch and extract content from URL
+			article, err := processor.Process(entry.URL)
+			if err != nil {
+				log.Printf("[Digest] Processing failed for %q: %v", entry.Title, err)
+				onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
+				continue
+			}
+			title = article.Title
+			byline = article.Byline
+			content = article.Content
 		}
 		articles = append(articles, converter.DigestArticle{
-			Title: article.Title, Byline: article.Byline, Content: article.Content,
+			Title: title, Byline: byline, Content: content,
 			FeedName: feedNames[entry.FeedID],
 		})
 		if entry.ID > maxEntryID {
@@ -679,6 +709,151 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 	return nil
 }
 
+// DeliverArticle processes and delivers a single article from an external
+// source (e.g., API ingest, webhook). If content is provided, it is used
+// directly; otherwise the article is fetched from url via readability.
+// If digestID is non-empty, the article is added to that digest's virtual
+// feed instead of being delivered immediately.
+func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, content, destID, directory, digestID string) error {
+	userID := UserIDFromContext(ctx)
+
+	// If targeting a digest, store the article as an entry on a virtual feed
+	if digestID != "" {
+		return s.ingestToDigest(ctx, userID, title, articleURL, content, digestID)
+	}
+
+	// Resolve content if not provided
+	byline := ""
+	if content == "" {
+		if articleURL == "" {
+			return fmt.Errorf("either url or content is required")
+		}
+		article, err := processor.Process(articleURL)
+		if err != nil {
+			return fmt.Errorf("failed to process article: %w", err)
+		}
+		title = article.Title
+		byline = article.Byline
+		content = article.Content
+	}
+
+	// Resolve destination
+	var destPtr *string
+	if destID != "" {
+		destPtr = &destID
+	}
+	destInstance, resolvedDestID, err := s.resolveDestination(userID, destPtr)
+	if err != nil {
+		return fmt.Errorf("destination error: %w", err)
+	}
+
+	// Generate PDF
+	htmlPath, err := converter.GenerateHTML(title, content, byline)
+	if err != nil {
+		return fmt.Errorf("HTML generation failed: %w", err)
+	}
+	defer os.Remove(htmlPath)
+
+	renderDir, err := os.MkdirTemp("", "rss2rm-ingest-*")
+	if err != nil {
+		return fmt.Errorf("failed to create render dir: %w", err)
+	}
+	defer os.RemoveAll(renderDir)
+
+	pdfName := fmt.Sprintf("%s - %s.pdf", time.Now().Format("2006-01-02"), SanitizeFilename(title))
+	tmpPDF := filepath.Join(renderDir, pdfName)
+
+	log.Printf("[Ingest] Converting to PDF: %s", pdfName)
+	if err := converter.HTMLToPDF(htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
+		return fmt.Errorf("PDF conversion failed: %w", err)
+	}
+
+	// Upload
+	if directory == "" {
+		directory = "Articles"
+	}
+	log.Printf("[Ingest] Uploading %q → %s (dest=%s)", pdfName, directory, resolvedDestID)
+	remotePath, err := destInstance.Upload(ctx, tmpPDF, directory)
+	if err != nil {
+		return fmt.Errorf("upload failed: %w", err)
+	}
+
+	s.persistDestinationConfig(userID, destInstance, resolvedDestID)
+
+	s.db.RecordDeliveredFile(db.DeliveredFile{
+		UserID:        userID,
+		DeliveryType:  "article",
+		DeliveryRef:   "ingest",
+		RemotePath:    remotePath,
+		DestinationID: resolvedDestID,
+	})
+
+	log.Printf("[Ingest] Delivered %q successfully", title)
+	return nil
+}
+
+// ingestToDigest adds an article to a digest's virtual feed so it will be
+// included in the next digest generation.
+func (s *LocalService) ingestToDigest(ctx context.Context, userID, title, articleURL, content, digestID string) error {
+	// Verify the digest exists
+	digest, err := s.db.GetDigestByID(userID, digestID)
+	if err != nil {
+		return fmt.Errorf("failed to get digest: %w", err)
+	}
+	if digest == nil {
+		return fmt.Errorf("digest not found: %s", digestID)
+	}
+
+	// Get or create the virtual feed for this digest
+	virtualFeedURL := "_ingest:" + digestID
+	feed, _ := s.db.GetActiveFeedByURL(userID, virtualFeedURL)
+	var feedID string
+	if feed == nil {
+		newFeed := db.Feed{
+			URL:    virtualFeedURL,
+			Name:   digest.Name + " (ingested)",
+			Active: true,
+		}
+		id, err := s.db.InsertFeed(userID, newFeed)
+		if err != nil {
+			return fmt.Errorf("failed to create virtual feed: %w", err)
+		}
+		feedID = id
+		s.db.AddFeedToDigest(digestID, feedID)
+	} else {
+		feedID = feed.ID
+	}
+
+	// If content not provided, fetch it
+	if content == "" && articleURL != "" {
+		article, err := processor.Process(articleURL)
+		if err != nil {
+			return fmt.Errorf("failed to process article: %w", err)
+		}
+		content = article.Content
+		if title == "" {
+			title = article.Title
+		}
+	}
+
+	// Create entry on the virtual feed
+	entryID := fmt.Sprintf("ingest-%d", time.Now().UnixNano())
+	entry := db.Entry{
+		FeedID:    feedID,
+		EntryID:   entryID,
+		Title:     title,
+		URL:       articleURL,
+		Published: time.Now(),
+		Content:   content,
+	}
+	if err := s.db.CreateEntry(userID, entry); err != nil {
+		return fmt.Errorf("failed to create entry: %w", err)
+	}
+
+	log.Printf("[Ingest] Added %q to digest %q", title, digest.Name)
+	return nil
+}
+
 // resolveDestination creates a Destination instance from a destination ID,
 // falling back to the system default if destID is nil.
 func (s *LocalService) resolveDestination(userID string, destID *string) (Destination, string, error) {
@@ -794,4 +969,32 @@ func NormalizeURL(u string) string {
 	parsed.Host = strings.ToLower(parsed.Host)
 	parsed.Path = strings.TrimSuffix(parsed.Path, "/")
 	return parsed.String()
+}
+
+// --- Webhook management ---
+
+// AddWebhook creates a new webhook for the authenticated user.
+func (s *LocalService) AddWebhook(ctx context.Context, webhookType, secret, config string) (string, error) {
+	userID := UserIDFromContext(ctx)
+	w := db.Webhook{
+		Type:   webhookType,
+		Secret: secret,
+		Config: config,
+		Active: true,
+	}
+	return s.db.InsertWebhook(userID, w)
+}
+
+// ListWebhooks returns all webhooks for the authenticated user.
+func (s *LocalService) ListWebhooks(ctx context.Context) ([]db.Webhook, error) {
+	return s.db.GetWebhooks(UserIDFromContext(ctx))
+}
+
+// RemoveWebhook deletes a webhook.
+func (s *LocalService) RemoveWebhook(ctx context.Context, id string) error {
+	return s.db.DeleteWebhook(UserIDFromContext(ctx), id)
+}
+
+func (s *LocalService) GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error) {
+	return s.db.GetWebhookByID(UserIDFromContext(ctx), id)
 }

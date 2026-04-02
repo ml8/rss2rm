@@ -251,7 +251,15 @@ func (s *RemoteService) UpdateDigest(ctx context.Context, digest db.Digest) erro
 	return ErrLocalOnly
 }
 
+func (s *RemoteService) GetDigestByID(ctx context.Context, id string) (*db.Digest, error) {
+	return nil, ErrLocalOnly
+}
+
 func (s *RemoteService) GetDigestsForFeed(ctx context.Context, feedID string) ([]db.Digest, error) {
+	return nil, ErrLocalOnly
+}
+
+func (s *RemoteService) GetNewEntriesForDigest(ctx context.Context, digestID string, afterID int64) ([]db.Entry, error) {
 	return nil, ErrLocalOnly
 }
 
@@ -272,5 +280,25 @@ func (s *RemoteService) GenerateDigest(ctx context.Context, digestID string, onE
 }
 
 func (s *RemoteService) ListRecentDeliveries(ctx context.Context, limit int) ([]db.DeliveryLogEntry, error) {
+	return nil, ErrLocalOnly
+}
+
+func (s *RemoteService) DeliverArticle(ctx context.Context, title, url, content, destID, directory, digestID string) error {
+	return ErrLocalOnly
+}
+
+func (s *RemoteService) AddWebhook(ctx context.Context, webhookType, secret, config string) (string, error) {
+	return "", ErrLocalOnly
+}
+
+func (s *RemoteService) ListWebhooks(ctx context.Context) ([]db.Webhook, error) {
+	return nil, ErrLocalOnly
+}
+
+func (s *RemoteService) RemoveWebhook(ctx context.Context, id string) error {
+	return ErrLocalOnly
+}
+
+func (s *RemoteService) GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error) {
 	return nil, ErrLocalOnly
 }

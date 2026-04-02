@@ -1,0 +1,167 @@
+
+      ~* THE MINIFLUX CONNECTION *~
+    In Which Webhooks Finally Worked
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      After Three Debugging Sessions
+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+           /\_/\          /\_/\
+          ( o.o )        ( x.x )
+           > ^ <          > n <
+          /|   |\        /|   |\
+         (_|   |_)      (_|   |_)
+
+   "It works!"       "It took us
+                      three deploys."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+     ~~ BUGS WE SQUASHED, IN ORDER ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+     1. MySQL VARCHAR vs TEXT
+        "BLOB/TEXT column used in key"
+        (webhooks table schema)
+
+     2. Secret had a leading space
+        "secret= 7a4b29d..."
+        (the most invisible bug)
+
+     3. Route registration order
+        requireAuth catch-all ate
+        our public webhook endpoint
+        (3ms response = never reached)
+
+     4. Private network blocking
+        INTEGRATION_ALLOW_PRIVATE_NETWORKS=1
+        (Miniflux SSRF protection)
+
+          /\_/\     /\_/\
+         ( -.- )   ( -.- )
+          > ~ <     > ~ <
+
+    "Four bugs," says Professor Whiskers.
+    "Each one a lesson in humility."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+          ~~ THE LEADING SPACE ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+    Miniflux secret: "7a4b29db0e3b..."
+    Database secret: " 7a4b29db0e3b..."
+                      ^
+                      THIS SPACE
+
+    HMAC("hello", "key") != HMAC("hello", " key")
+
+          /\_/\
+         ( O.O )
+          > ! <
+
+    "An invisible character destroyed
+     our entire authentication scheme."
+
+    "TRIM(secret) fixed it."
+
+    "I need a nap."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+        ~~ THE ROUTE ORDER LESSON ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+    BEFORE (broken):
+    mux.Handle("/api/v1/", requireAuth)
+    mux.HandleFunc("POST .../miniflux", hmac)
+         ^ never reached
+
+    AFTER (works):
+    mux.HandleFunc("POST .../miniflux", hmac)
+    mux.Handle("/api/v1/", requireAuth)
+         ^ specific route wins
+
+          /\_/\
+         ( o.o )
+          > ^ <
+
+    "Order matters," says Byte.
+    "In routes, as in breakfast."
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+         ~~ THE FULL JOURNEY ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+    Miniflux             rss2rm
+      |                    |
+      |  save article      |
+      |                    |
+      |  HMAC(body,secret) |
+      |  ─────────────────>|
+      |                    | validate sig
+      |                    | find user
+      |                    | process article
+      |                    | generate PDF
+      |                    | upload to dest
+      |                    |
+      |              reMarkable
+      |                    |
+      |                  /\_/\
+      |                 ( ^.^ )
+      |                  > w <
+      |
+      |    "It's on my tablet!"
+
+    From Miniflux save button to
+    reMarkable tablet. One click.
+
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+             ~~ NAP TIME ~~
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
+
+
+        /\_/\
+       ( -.- )  zzZZzz
+        > ~ <
+       /     \___
+      /   _      \
+     |   (_)      |
+      \           /
+       '~~~~~~~~~'
+
+    "The webhook works.
+     The HMAC validates.
+     The route is registered
+     in the correct order.
+     The secret has no
+     leading space.
+
+     All is well."
+
+                 -- Professor Whiskers
+
+
+              THE END
+
+         /\_/\  ~*~  /\_/\
+        ( ^.^ ) ||| ( ^.^ )
+         > w <  |||  > w <
+               \|||/
+            ~~~~|||~~~~
+           /           \
+          |  SAVE IT    |
+          |  IN         |
+          |  MINIFLUX   |
+          |  (for real  |
+          |  this time) |
+           \           /
+            ~~~~~~~~~~~
+
+  *.  *. *.  *. *.  *. *.  *. *.  *. *.  *. *.
