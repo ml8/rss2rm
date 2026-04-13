@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -187,11 +187,11 @@ func credentialCookies(cred *db.Credential) []*http.Cookie {
 }
 
 // lookupCredential fetches the credential for a feed, or nil if none is set.
-func (s *LocalService) lookupCredential(userID string, credentialID *string) *db.Credential {
+func (s *LocalService) lookupCredential(ctx context.Context, userID string, credentialID *string) *db.Credential {
 	if credentialID == nil {
 		return nil
 	}
-	cred, _ := s.db.GetCredentialByID(userID, *credentialID)
+	cred, _ := s.db.GetCredentialByID(ctx, userID, *credentialID)
 	return cred
 }
 
@@ -209,13 +209,13 @@ func (s *LocalService) AddDestination(ctx context.Context, destType, name string
 		IsDefault: isDefault,
 	}
 
-	id, err := s.db.InsertDestination(userID, dest)
+	id, err := s.db.InsertDestination(ctx, userID, dest)
 	if err != nil {
 		return "", err
 	}
 
 	if isDefault {
-		if err := s.db.SetDefaultDestination(userID, id); err != nil {
+		if err := s.db.SetDefaultDestination(ctx, userID, id); err != nil {
 			return id, fmt.Errorf("destination created but failed to set default: %w", err)
 		}
 	}
@@ -223,19 +223,19 @@ func (s *LocalService) AddDestination(ctx context.Context, destType, name string
 }
 
 func (s *LocalService) ListDestinations(ctx context.Context) ([]db.Destination, error) {
-	return s.db.GetDestinations(UserIDFromContext(ctx))
+	return s.db.GetDestinations(ctx, UserIDFromContext(ctx))
 }
 
 func (s *LocalService) RemoveDestination(ctx context.Context, id string) error {
-	return s.db.RemoveDestination(UserIDFromContext(ctx), id)
+	return s.db.RemoveDestination(ctx, UserIDFromContext(ctx), id)
 }
 
 func (s *LocalService) SetDefaultDestination(ctx context.Context, id string) error {
-	return s.db.SetDefaultDestination(UserIDFromContext(ctx), id)
+	return s.db.SetDefaultDestination(ctx, UserIDFromContext(ctx), id)
 }
 
 func (s *LocalService) TestDestination(ctx context.Context, id string) error {
-	destRecord, err := s.db.GetDestinationByID(UserIDFromContext(ctx), id)
+	destRecord, err := s.db.GetDestinationByID(ctx, UserIDFromContext(ctx), id)
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func (s *LocalService) UpdateDestinationConfig(ctx context.Context, id string, c
 	if err != nil {
 		return err
 	}
-	return s.db.UpdateDestinationConfig(UserIDFromContext(ctx), id, string(configJSON))
+	return s.db.UpdateDestinationConfig(ctx, UserIDFromContext(ctx), id, string(configJSON))
 }
 
 func (s *LocalService) UpdateDestination(ctx context.Context, id string, name string, config map[string]string) error {
@@ -264,18 +264,18 @@ func (s *LocalService) UpdateDestination(ctx context.Context, id string, name st
 	if err != nil {
 		return err
 	}
-	return s.db.UpdateDestination(UserIDFromContext(ctx), id, name, string(configJSON))
+	return s.db.UpdateDestination(ctx, UserIDFromContext(ctx), id, name, string(configJSON))
 }
 
 func (s *LocalService) GetDestinationByID(ctx context.Context, id string) (*db.Destination, error) {
-	return s.db.GetDestinationByID(UserIDFromContext(ctx), id)
+	return s.db.GetDestinationByID(ctx, UserIDFromContext(ctx), id)
 }
 
 // AddFeed adds a new feed to the database with a default individual delivery.
 func (s *LocalService) AddFeed(ctx context.Context, feed db.Feed) error {
 	userID := UserIDFromContext(ctx)
 	feed.URL = NormalizeURL(feed.URL)
-	existing, err := s.db.GetActiveFeedByURL(userID, feed.URL)
+	existing, err := s.db.GetActiveFeedByURL(ctx, userID, feed.URL)
 	if err != nil {
 		return err
 	}
@@ -286,17 +286,17 @@ func (s *LocalService) AddFeed(ctx context.Context, feed db.Feed) error {
 		}
 		feed.Active = true
 		feed.ID = existing.ID
-		if err := s.db.UpdateFeed(userID, feed); err != nil {
+		if err := s.db.UpdateFeed(ctx, userID, feed); err != nil {
 			return err
 		}
-		return s.db.DeactivateFeedsByURLExceptID(userID, feed.URL, feed.ID)
+		return s.db.DeactivateFeedsByURLExceptID(ctx, userID, feed.URL, feed.ID)
 	}
 
 	if feed.Name == "" {
 		feed.Name = GenerateNameFromURL(feed.URL)
 	}
 	feed.Active = true
-	feedID, err := s.db.InsertFeed(userID, feed)
+	feedID, err := s.db.InsertFeed(ctx, userID, feed)
 	if err != nil {
 		return err
 	}
@@ -306,38 +306,38 @@ func (s *LocalService) AddFeed(ctx context.Context, feed db.Feed) error {
 		FeedID:    feedID,
 		Directory: SanitizeFilename(feed.Name),
 	}
-	return s.db.SetFeedDelivery(userID, fd)
+	return s.db.SetFeedDelivery(ctx, userID, fd)
 }
 
 func (s *LocalService) UpdateFeed(ctx context.Context, feed db.Feed) error {
-	return s.db.UpdateFeed(UserIDFromContext(ctx), feed)
+	return s.db.UpdateFeed(ctx, UserIDFromContext(ctx), feed)
 }
 
 // RemoveFeed marks a feed as inactive.
 func (s *LocalService) RemoveFeed(ctx context.Context, feedURL string) error {
 	feedURL = NormalizeURL(feedURL)
-	return s.db.DeactivateFeed(UserIDFromContext(ctx), feedURL)
+	return s.db.DeactivateFeed(ctx, UserIDFromContext(ctx), feedURL)
 }
 
 func (s *LocalService) RemoveFeedByID(ctx context.Context, id string) error {
-	return s.db.DeactivateFeedByID(UserIDFromContext(ctx), id)
+	return s.db.DeactivateFeedByID(ctx, UserIDFromContext(ctx), id)
 }
 
 // ListFeeds returns all active feeds.
 func (s *LocalService) ListFeeds(ctx context.Context) ([]db.Feed, error) {
-	return s.db.GetActiveFeeds(UserIDFromContext(ctx))
+	return s.db.GetActiveFeeds(ctx, UserIDFromContext(ctx))
 }
 
 func (s *LocalService) GetFeedDelivery(ctx context.Context, feedID string) (*db.FeedDelivery, error) {
-	return s.db.GetFeedDelivery(UserIDFromContext(ctx), feedID)
+	return s.db.GetFeedDelivery(ctx, UserIDFromContext(ctx), feedID)
 }
 
 func (s *LocalService) SetFeedDelivery(ctx context.Context, fd db.FeedDelivery) error {
-	return s.db.SetFeedDelivery(UserIDFromContext(ctx), fd)
+	return s.db.SetFeedDelivery(ctx, UserIDFromContext(ctx), fd)
 }
 
 func (s *LocalService) RemoveFeedDelivery(ctx context.Context, feedID string) error {
-	return s.db.RemoveFeedDelivery(UserIDFromContext(ctx), feedID)
+	return s.db.RemoveFeedDelivery(ctx, UserIDFromContext(ctx), feedID)
 }
 
 func (s *LocalService) AddDigest(ctx context.Context, digest db.Digest) (string, error) {
@@ -345,58 +345,58 @@ func (s *LocalService) AddDigest(ctx context.Context, digest db.Digest) (string,
 		digest.Directory = digest.Name
 	}
 	digest.Active = true
-	return s.db.InsertDigest(UserIDFromContext(ctx), digest)
+	return s.db.InsertDigest(ctx, UserIDFromContext(ctx), digest)
 }
 
 func (s *LocalService) ListDigests(ctx context.Context) ([]db.Digest, error) {
-	return s.db.GetDigests(UserIDFromContext(ctx))
+	return s.db.GetDigests(ctx, UserIDFromContext(ctx))
 }
 
 func (s *LocalService) RemoveDigest(ctx context.Context, id string) error {
-	return s.db.RemoveDigest(UserIDFromContext(ctx), id)
+	return s.db.RemoveDigest(ctx, UserIDFromContext(ctx), id)
 }
 
 func (s *LocalService) UpdateDigest(ctx context.Context, digest db.Digest) error {
-	return s.db.UpdateDigest(UserIDFromContext(ctx), digest)
+	return s.db.UpdateDigest(ctx, UserIDFromContext(ctx), digest)
 }
 
 func (s *LocalService) GetDigestByID(ctx context.Context, id string) (*db.Digest, error) {
-	return s.db.GetDigestByID(UserIDFromContext(ctx), id)
+	return s.db.GetDigestByID(ctx, UserIDFromContext(ctx), id)
 }
 
 func (s *LocalService) GetDigestsForFeed(ctx context.Context, feedID string) ([]db.Digest, error) {
-	return s.db.GetDigestsForFeed(UserIDFromContext(ctx), feedID)
+	return s.db.GetDigestsForFeed(ctx, UserIDFromContext(ctx), feedID)
 }
 
 func (s *LocalService) GetNewEntriesForDigest(ctx context.Context, digestID string, afterID int64) ([]db.Entry, error) {
-	return s.db.GetNewEntriesForDigest(digestID, afterID)
+	return s.db.GetNewEntriesForDigest(ctx, digestID, afterID)
 }
 
 func (s *LocalService) AddFeedToDigest(ctx context.Context, digestID, feedID string, alsoIndividual bool) error {
-	if err := s.db.AddFeedToDigest(digestID, feedID); err != nil {
+	if err := s.db.AddFeedToDigest(ctx, digestID, feedID); err != nil {
 		return err
 	}
 	if !alsoIndividual {
-		return s.db.RemoveFeedDelivery(UserIDFromContext(ctx), feedID)
+		return s.db.RemoveFeedDelivery(ctx, UserIDFromContext(ctx), feedID)
 	}
 	return nil
 }
 
 func (s *LocalService) RemoveFeedFromDigest(ctx context.Context, digestID, feedID string) error {
-	return s.db.RemoveFeedFromDigest(digestID, feedID)
+	return s.db.RemoveFeedFromDigest(ctx, digestID, feedID)
 }
 
 func (s *LocalService) ListDigestFeeds(ctx context.Context, digestID string) ([]db.Feed, error) {
-	return s.db.GetFeedsForDigest(UserIDFromContext(ctx), digestID)
+	return s.db.GetFeedsForDigest(ctx, UserIDFromContext(ctx), digestID)
 }
 
 func (s *LocalService) ListRecentDeliveries(ctx context.Context, limit int) ([]db.DeliveryLogEntry, error) {
-	return s.db.GetRecentDeliveries(UserIDFromContext(ctx), limit)
+	return s.db.GetRecentDeliveries(ctx, UserIDFromContext(ctx), limit)
 }
 
 func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEvent func(PollEvent)) error {
 	userID := UserIDFromContext(ctx)
-	digest, err := s.db.GetDigestByID(userID, digestID)
+	digest, err := s.db.GetDigestByID(ctx, userID, digestID)
 	if err != nil {
 		return fmt.Errorf("failed to get digest: %w", err)
 	}
@@ -404,23 +404,23 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 		return fmt.Errorf("digest not found: %s", digestID)
 	}
 
-	log.Printf("[Digest] Starting generation for %q (id=%s, cursor=%d)", digest.Name, digestID, digest.LastDeliveredID)
+	slog.Info("starting generation", "component", "digest", "name", digest.Name, "id", digestID, "cursor", digest.LastDeliveredID)
 	onEvent(PollEvent{Type: EventStart, Message: fmt.Sprintf("Generating digest: %s", digest.Name)})
 
-	entries, err := s.db.GetNewEntriesForDigest(digestID, digest.LastDeliveredID)
+	entries, err := s.db.GetNewEntriesForDigest(ctx, digestID, digest.LastDeliveredID)
 	if err != nil {
 		return fmt.Errorf("failed to get entries: %w", err)
 	}
 	if len(entries) == 0 {
-		log.Printf("[Digest] No new articles for %q", digest.Name)
+		slog.Info("no new articles", "component", "digest", "name", digest.Name)
 		onEvent(PollEvent{Type: EventFinish, Message: "No new articles for digest"})
 		return nil
 	}
 
-	log.Printf("[Digest] Found %d new entries for %q", len(entries), digest.Name)
+	slog.Info("found new entries", "component", "digest", "count", len(entries), "name", digest.Name)
 
 	// Build feed name lookup
-	digestFeeds, _ := s.db.GetFeedsForDigest(userID, digestID)
+	digestFeeds, _ := s.db.GetFeedsForDigest(ctx, userID, digestID)
 	feedNames := make(map[string]string)
 	for _, f := range digestFeeds {
 		feedNames[f.ID] = f.Name
@@ -437,12 +437,12 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 			return ctx.Err()
 		default:
 		}
-		log.Printf("[Digest] Rendering article %q for digest %q", entry.Title, digest.Name)
+		slog.Info("rendering article", "component", "digest", "title", entry.Title, "name", digest.Name)
 		onEvent(PollEvent{Type: EventItemFound, ItemTitle: entry.Title, Message: "Rendering for digest"})
 
-		result, err := s.fetcher.FetchContent(entry.URL, entry.Content, userID)
+		result, err := s.fetcher.FetchContent(ctx, entry.URL, entry.Content, userID)
 		if err != nil {
-			log.Printf("[Digest] Processing failed for %q: %v", entry.Title, err)
+			slog.Error("processing failed", "component", "digest", "title", entry.Title, "error", err)
 			onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
 			failedEntries = append(failedEntries, entry)
 			continue
@@ -470,16 +470,16 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 	}
 
 	if len(articles) == 0 {
-		log.Printf("[Digest] All articles failed to render for %q", digest.Name)
+		slog.Error("all articles failed to render", "component", "digest", "name", digest.Name)
 		onEvent(PollEvent{Type: EventFinish, Message: "All articles failed to render"})
 		// Re-enqueue failed entries even if nothing was delivered
-		s.reEnqueueEntries(userID, failedEntries)
+		s.reEnqueueEntries(ctx, userID, failedEntries)
 		return nil
 	}
 
 	// Generate combined PDF
-	log.Printf("[Digest] Generating combined HTML for %q (%d articles)", digest.Name, len(articles))
-	htmlPath, err := converter.GenerateDigestHTML(digest.Name, articles)
+	slog.Info("generating combined HTML", "component", "digest", "name", digest.Name, "count", len(articles))
+	htmlPath, err := converter.GenerateDigestHTML(ctx, digest.Name, articles)
 	if err != nil {
 		return fmt.Errorf("digest HTML generation failed: %w", err)
 	}
@@ -495,13 +495,13 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 	pdfName := fmt.Sprintf("%s - %s.pdf", time.Now().Format("2006-01-02"), SanitizeFilename(digest.Name))
 	tmpPDF := filepath.Join(renderDir, pdfName)
 
-	log.Printf("[Digest] Converting to PDF: %s", pdfName)
-	if err := converter.HTMLToPDF(htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
+	slog.Info("converting to PDF", "component", "digest", "path", pdfName)
+	if err := converter.HTMLToPDF(ctx, htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
 		return fmt.Errorf("digest PDF conversion failed: %w", err)
 	}
 
 	// Resolve destination and upload
-	destInstance, destID, err := s.resolveDestination(userID, digest.DestinationID)
+	destInstance, destID, err := s.resolveDestination(ctx, userID, digest.DestinationID)
 	if err != nil {
 		return fmt.Errorf("digest destination error: %w", err)
 	}
@@ -511,22 +511,22 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 		uploadTarget = SanitizeFilename(digest.Name)
 	}
 
-	log.Printf("[Digest] Uploading %q → %s (dest=%s)", pdfName, uploadTarget, destID)
+	slog.Info("uploading", "component", "digest", "path", pdfName, "target", uploadTarget, "dest", destID)
 	remotePath, err := destInstance.Upload(ctx, tmpPDF, uploadTarget)
 	if err != nil {
-		log.Printf("[Digest] Upload failed for %q: %v", digest.Name, err)
+		slog.Error("upload failed", "component", "digest", "name", digest.Name, "error", err)
 		return fmt.Errorf("digest upload failed: %w", err)
 	}
 
 	// Persist updated config
-	s.persistDestinationConfig(userID, destInstance, destID)
+	s.persistDestinationConfig(ctx, userID, destInstance, destID)
 
 	// Record delivered file for retention tracking
 	digestDestID := ""
 	if digest.DestinationID != nil {
 		digestDestID = *digest.DestinationID
 	}
-	s.db.RecordDeliveredFile(db.DeliveredFile{
+	s.db.RecordDeliveredFile(ctx, db.DeliveredFile{
 		UserID:        userID,
 		DeliveryType:  "digest",
 		DeliveryRef:   digestID,
@@ -540,14 +540,14 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 	}
 
 	// Advance cursor
-	if err := s.db.MarkDigestGenerated(digestID, maxEntryID); err != nil {
+	if err := s.db.MarkDigestGenerated(ctx, digestID, maxEntryID); err != nil {
 		return fmt.Errorf("failed to mark digest generated: %w", err)
 	}
 
 	// Re-enqueue failed entries above the new cursor so they appear in the next run
-	s.reEnqueueEntries(userID, failedEntries)
+	s.reEnqueueEntries(ctx, userID, failedEntries)
 
-	log.Printf("[Digest] Digest %q uploaded successfully (%d articles, cursor→%d)", digest.Name, len(articles), maxEntryID)
+	slog.Info("digest uploaded successfully", "component", "digest", "name", digest.Name, "count", len(articles), "cursor", maxEntryID)
 	onEvent(PollEvent{Type: EventItemUploaded, Message: fmt.Sprintf("Digest uploaded: %d articles", len(articles))})
 	onEvent(PollEvent{Type: EventFinish, Message: "Digest generation complete"})
 	return nil
@@ -555,7 +555,7 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 
 // reEnqueueEntries re-creates failed entries with new IDs so they appear
 // above the digest cursor in the next generation run.
-func (s *LocalService) reEnqueueEntries(userID string, entries []db.Entry) {
+func (s *LocalService) reEnqueueEntries(ctx context.Context, userID string, entries []db.Entry) {
 	for _, e := range entries {
 		newEntry := db.Entry{
 			FeedID:    e.FeedID,
@@ -565,11 +565,11 @@ func (s *LocalService) reEnqueueEntries(userID string, entries []db.Entry) {
 			Published: e.Published,
 			Content:   e.Content,
 		}
-		if err := s.db.CreateEntry(userID, newEntry); err != nil {
-			log.Printf("[Digest] Failed to re-enqueue %q: %v", e.Title, err)
+		if err := s.db.CreateEntry(ctx, userID, newEntry); err != nil {
+			slog.Error("failed to re-enqueue", "component", "digest", "title", e.Title, "error", err)
 			continue
 		}
-		log.Printf("[Digest] Re-enqueued %q for next digest run", e.Title)
+		slog.Info("re-enqueued for next digest run", "component", "digest", "title", e.Title)
 	}
 }
 
@@ -578,7 +578,7 @@ func (s *LocalService) reEnqueueEntries(userID string, entries []db.Entry) {
 // non-empty, only matching feeds are polled.
 func (s *LocalService) PollFeeds(ctx context.Context, filterURLs []string, onEvent func(PollEvent)) error {
 	userID := UserIDFromContext(ctx)
-	feeds, err := s.db.GetActiveFeeds(userID)
+	feeds, err := s.db.GetActiveFeeds(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -600,7 +600,7 @@ func (s *LocalService) PollFeeds(ctx context.Context, filterURLs []string, onEve
 		feeds = filtered
 	}
 
-	log.Printf("[Poll] Polling %d feeds", len(feeds))
+	slog.Info("polling feeds", "component", "poll", "count", len(feeds))
 
 	for _, feed := range feeds {
 		select {
@@ -612,13 +612,13 @@ func (s *LocalService) PollFeeds(ctx context.Context, filterURLs []string, onEve
 		s.processFeed(ctx, feed, onEvent, opts)
 	}
 
-	log.Printf("[Poll] Polling complete")
+	slog.Info("polling complete", "component", "poll")
 	return nil
 }
 
 func (s *LocalService) processFeed(ctx context.Context, feed db.Feed, onEvent func(PollEvent), opts PollOptions) {
 	userID := UserIDFromContext(ctx)
-	log.Printf("[Poll] Starting poll for feed %q (%s)", feed.Name, feed.URL)
+	slog.Info("starting poll for feed", "component", "poll", "name", feed.Name, "url", feed.URL)
 	onEvent(PollEvent{FeedURL: feed.URL, Type: EventStart, Message: "Starting poll"})
 
 	limit := feed.Backfill
@@ -630,19 +630,19 @@ func (s *LocalService) processFeed(ctx context.Context, feed db.Feed, onEvent fu
 	}
 
 	// Look up credential for authenticated fetching (e.g., Substack)
-	cred := s.lookupCredential(userID, feed.CredentialID)
+	cred := s.lookupCredential(ctx, userID, feed.CredentialID)
 	var fetchOpts *importer.FetchOptions
 	if cookies := credentialCookies(cred); len(cookies) > 0 {
 		fetchOpts = &importer.FetchOptions{Cookies: cookies}
 	}
 
-	items, err := importer.Fetch(feed.URL, limit, fetchOpts)
+	items, err := importer.Fetch(ctx, feed.URL, limit, fetchOpts)
 	if err != nil {
-		log.Printf("[Poll] Fetch failed for %q: %v", feed.Name, err)
+		slog.Error("fetch failed", "component", "poll", "name", feed.Name, "error", err)
 		onEvent(PollEvent{FeedURL: feed.URL, Type: EventError, Message: fmt.Sprintf("Fetch failed: %v", err)})
 		return
 	}
-	log.Printf("[Poll] Fetched %d items from %q", len(items), feed.Name)
+	slog.Info("fetched items", "component", "poll", "count", len(items), "name", feed.Name)
 	if len(items) == 0 {
 		onEvent(PollEvent{FeedURL: feed.URL, Type: EventFinish, Message: "No items found"})
 		return
@@ -651,7 +651,7 @@ func (s *LocalService) processFeed(ctx context.Context, feed db.Feed, onEvent fu
 	// Discover entries
 	newCount := 0
 	for _, item := range items {
-		seen, err := s.db.HasEntry(userID, feed.ID, item.GUID)
+		seen, err := s.db.HasEntry(ctx, userID, feed.ID, item.GUID)
 		if err != nil {
 			continue
 		}
@@ -665,31 +665,31 @@ func (s *LocalService) processFeed(ctx context.Context, feed db.Feed, onEvent fu
 				URL:       item.Link,
 				Published: item.Published,
 			}
-			s.db.CreateEntry(userID, entry)
+			s.db.CreateEntry(ctx, userID, entry)
 		}
 	}
 	if newCount > 0 {
-		log.Printf("[Poll] Discovered %d new entries for %q", newCount, feed.Name)
+		slog.Info("discovered new entries", "component", "poll", "count", newCount, "name", feed.Name)
 	}
 
 	// Individual delivery
-	fd, err := s.db.GetFeedDelivery(userID, feed.ID)
+	fd, err := s.db.GetFeedDelivery(ctx, userID, feed.ID)
 	if err != nil || fd == nil {
-		s.db.MarkFeedPolled(feed.ID)
-		log.Printf("[Poll] Feed %q has no individual delivery configured", feed.Name)
+		s.db.MarkFeedPolled(ctx, feed.ID)
+		slog.Info("feed has no individual delivery configured", "component", "poll", "name", feed.Name)
 		onEvent(PollEvent{FeedURL: feed.URL, Type: EventFinish, Message: "Poll complete (digest only)"})
 		return
 	}
 
-	undelivered, err := s.db.GetUndeliveredEntries(feed.ID, fd.LastDeliveredID)
+	undelivered, err := s.db.GetUndeliveredEntries(ctx, feed.ID, fd.LastDeliveredID)
 	if err != nil {
-		log.Printf("[Poll] Failed to get undelivered entries for %q: %v", feed.Name, err)
+		slog.Error("failed to get undelivered entries", "component", "poll", "name", feed.Name, "error", err)
 		onEvent(PollEvent{FeedURL: feed.URL, Type: EventError, Message: fmt.Sprintf("Failed to get entries: %v", err)})
 		return
 	}
 
 	if len(undelivered) > 0 {
-		log.Printf("[Delivery] %d entries to deliver individually for %q → %s", len(undelivered), feed.Name, fd.Directory)
+		slog.Info("entries to deliver individually", "component", "delivery", "count", len(undelivered), "name", feed.Name, "directory", fd.Directory)
 	}
 
 	for _, entry := range undelivered {
@@ -701,36 +701,36 @@ func (s *LocalService) processFeed(ctx context.Context, feed db.Feed, onEvent fu
 		if err := s.deliverEntry(ctx, *fd, entry, onEvent); err != nil {
 			break
 		}
-		s.db.AdvanceFeedDelivery(feed.ID, entry.ID)
+		s.db.AdvanceFeedDelivery(ctx, feed.ID, entry.ID)
 	}
 
-	s.db.MarkFeedPolled(feed.ID)
-	log.Printf("[Poll] Poll complete for %q", feed.Name)
+	s.db.MarkFeedPolled(ctx, feed.ID)
+	slog.Info("poll complete", "component", "poll", "name", feed.Name)
 	onEvent(PollEvent{FeedURL: feed.URL, Type: EventFinish, Message: "Poll complete"})
 }
 
 // deliverEntry renders and uploads a single entry for individual delivery.
 func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, entry db.Entry, onEvent func(PollEvent)) error {
 	userID := UserIDFromContext(ctx)
-	log.Printf("[Delivery] Processing entry %q (id=%d)", entry.Title, entry.ID)
+	slog.Info("processing entry", "component", "delivery", "title", entry.Title, "id", entry.ID)
 
-	destInstance, destID, err := s.resolveDestination(userID, fd.DestinationID)
+	destInstance, destID, err := s.resolveDestination(ctx, userID, fd.DestinationID)
 	if err != nil {
-		log.Printf("[Delivery] Destination error for entry %q: %v", entry.Title, err)
+		slog.Error("destination error", "component", "delivery", "title", entry.Title, "error", err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Destination error: %v", err)})
 		return err
 	}
 
-	result, err := s.fetcher.FetchContent(entry.URL, entry.Content, userID)
+	result, err := s.fetcher.FetchContent(ctx, entry.URL, entry.Content, userID)
 	if err != nil {
-		log.Printf("[Delivery] Article processing failed for %q: %v", entry.Title, err)
+		slog.Error("article processing failed", "component", "delivery", "title", entry.Title, "error", err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
 		return err
 	}
 
-	htmlPath, err := converter.GenerateHTML(result.Title, result.Content, result.Byline)
+	htmlPath, err := converter.GenerateHTML(ctx, result.Title, result.Content, result.Byline)
 	if err != nil {
-		log.Printf("[Delivery] HTML generation failed for %q: %v", entry.Title, err)
+		slog.Error("HTML generation failed", "component", "delivery", "title", entry.Title, "error", err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("HTML generation failed: %v", err)})
 		return err
 	}
@@ -746,9 +746,9 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 	pdfName := fmt.Sprintf("%s - %s.pdf", entry.Published.Format("2006-01-02"), SanitizeFilename(result.Title))
 	tmpPDF := filepath.Join(renderDir, pdfName)
 
-	log.Printf("[Delivery] Converting to PDF: %s", pdfName)
-	if err := converter.HTMLToPDF(htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
-		log.Printf("[Delivery] PDF conversion failed for %q: %v", entry.Title, err)
+	slog.Info("converting to PDF", "component", "delivery", "path", pdfName)
+	if err := converter.HTMLToPDF(ctx, htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
+		slog.Error("PDF conversion failed", "component", "delivery", "title", entry.Title, "error", err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("PDF conversion failed: %v", err)})
 		return err
 	}
@@ -758,23 +758,23 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 		uploadTarget = "RSS"
 	}
 
-	log.Printf("[Delivery] Uploading %q → %s (dest=%s)", pdfName, uploadTarget, destID)
+	slog.Info("uploading", "component", "delivery", "path", pdfName, "target", uploadTarget, "dest", destID)
 	remotePath, err := destInstance.Upload(ctx, tmpPDF, uploadTarget)
 	if err != nil {
-		log.Printf("[Delivery] Upload failed for %q: %v", entry.Title, err)
+		slog.Error("upload failed", "component", "delivery", "title", entry.Title, "error", err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Upload failed: %v", err)})
 		return err
 	}
 
 	// Persist updated config (token refresh etc.)
-	s.persistDestinationConfig(userID, destInstance, destID)
+	s.persistDestinationConfig(ctx, userID, destInstance, destID)
 
 	// Record delivered file for retention tracking
 	fdDestID := ""
 	if fd.DestinationID != nil {
 		fdDestID = *fd.DestinationID
 	}
-	s.db.RecordDeliveredFile(db.DeliveredFile{
+	s.db.RecordDeliveredFile(ctx, db.DeliveredFile{
 		UserID:        userID,
 		DeliveryType:  "individual",
 		DeliveryRef:   fd.FeedID,
@@ -788,7 +788,7 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 		s.cleanupOldDeliveries(ctx, userID, "individual", fd.FeedID, fd.Retain)
 	}
 
-	log.Printf("[Delivery] Uploaded %q successfully", entry.Title)
+	slog.Info("uploaded successfully", "component", "delivery", "title", entry.Title)
 	onEvent(PollEvent{Type: EventItemUploaded, ItemTitle: entry.Title, Message: "Uploaded"})
 	return nil
 }
@@ -812,7 +812,7 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 		if articleURL == "" {
 			return fmt.Errorf("either url or content is required")
 		}
-		result, err := s.fetcher.FetchContent(articleURL, "", userID)
+		result, err := s.fetcher.FetchContent(ctx, articleURL, "", userID)
 		if err != nil {
 			return fmt.Errorf("failed to process article: %w", err)
 		}
@@ -826,13 +826,13 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 	if destID != "" {
 		destPtr = &destID
 	}
-	destInstance, resolvedDestID, err := s.resolveDestination(userID, destPtr)
+	destInstance, resolvedDestID, err := s.resolveDestination(ctx, userID, destPtr)
 	if err != nil {
 		return fmt.Errorf("destination error: %w", err)
 	}
 
 	// Generate PDF
-	htmlPath, err := converter.GenerateHTML(title, content, byline)
+	htmlPath, err := converter.GenerateHTML(ctx, title, content, byline)
 	if err != nil {
 		return fmt.Errorf("HTML generation failed: %w", err)
 	}
@@ -847,8 +847,8 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 	pdfName := fmt.Sprintf("%s - %s.pdf", time.Now().Format("2006-01-02"), SanitizeFilename(title))
 	tmpPDF := filepath.Join(renderDir, pdfName)
 
-	log.Printf("[Ingest] Converting to PDF: %s", pdfName)
-	if err := converter.HTMLToPDF(htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
+	slog.Info("converting to PDF", "component", "ingest", "path", pdfName)
+	if err := converter.HTMLToPDF(ctx, htmlPath, tmpPDF, DefaultHeadlessCommand); err != nil {
 		return fmt.Errorf("PDF conversion failed: %w", err)
 	}
 
@@ -856,15 +856,15 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 	if directory == "" {
 		directory = "Articles"
 	}
-	log.Printf("[Ingest] Uploading %q → %s (dest=%s)", pdfName, directory, resolvedDestID)
+	slog.Info("uploading", "component", "ingest", "path", pdfName, "target", directory, "dest", resolvedDestID)
 	remotePath, err := destInstance.Upload(ctx, tmpPDF, directory)
 	if err != nil {
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
-	s.persistDestinationConfig(userID, destInstance, resolvedDestID)
+	s.persistDestinationConfig(ctx, userID, destInstance, resolvedDestID)
 
-	s.db.RecordDeliveredFile(db.DeliveredFile{
+	s.db.RecordDeliveredFile(ctx, db.DeliveredFile{
 		UserID:        userID,
 		DeliveryType:  "article",
 		DeliveryRef:   "ingest",
@@ -872,7 +872,7 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 		DestinationID: resolvedDestID,
 	})
 
-	log.Printf("[Ingest] Delivered %q successfully", title)
+	slog.Info("delivered successfully", "component", "ingest", "title", title)
 	return nil
 }
 
@@ -880,7 +880,7 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 // included in the next digest generation.
 func (s *LocalService) ingestToDigest(ctx context.Context, userID, title, articleURL, content, digestID string) error {
 	// Verify the digest exists
-	digest, err := s.db.GetDigestByID(userID, digestID)
+	digest, err := s.db.GetDigestByID(ctx, userID, digestID)
 	if err != nil {
 		return fmt.Errorf("failed to get digest: %w", err)
 	}
@@ -890,7 +890,7 @@ func (s *LocalService) ingestToDigest(ctx context.Context, userID, title, articl
 
 	// Get or create the virtual feed for this digest
 	virtualFeedURL := "_ingest:" + digestID
-	feed, _ := s.db.GetActiveFeedByURL(userID, virtualFeedURL)
+	feed, _ := s.db.GetActiveFeedByURL(ctx, userID, virtualFeedURL)
 	var feedID string
 	if feed == nil {
 		newFeed := db.Feed{
@@ -898,19 +898,19 @@ func (s *LocalService) ingestToDigest(ctx context.Context, userID, title, articl
 			Name:   digest.Name + " (ingested)",
 			Active: true,
 		}
-		id, err := s.db.InsertFeed(userID, newFeed)
+		id, err := s.db.InsertFeed(ctx, userID, newFeed)
 		if err != nil {
 			return fmt.Errorf("failed to create virtual feed: %w", err)
 		}
 		feedID = id
-		s.db.AddFeedToDigest(digestID, feedID)
+		s.db.AddFeedToDigest(ctx, digestID, feedID)
 	} else {
 		feedID = feed.ID
 	}
 
 	// If content not provided, fetch it
 	if content == "" && articleURL != "" {
-		result, err := s.fetcher.FetchContent(articleURL, "", userID)
+		result, err := s.fetcher.FetchContent(ctx, articleURL, "", userID)
 		if err != nil {
 			return fmt.Errorf("failed to process article: %w", err)
 		}
@@ -930,23 +930,23 @@ func (s *LocalService) ingestToDigest(ctx context.Context, userID, title, articl
 		Published: time.Now(),
 		Content:   content,
 	}
-	if err := s.db.CreateEntry(userID, entry); err != nil {
+	if err := s.db.CreateEntry(ctx, userID, entry); err != nil {
 		return fmt.Errorf("failed to create entry: %w", err)
 	}
 
-	log.Printf("[Ingest] Added %q to digest %q", title, digest.Name)
+	slog.Info("added to digest", "component", "ingest", "title", title, "name", digest.Name)
 	return nil
 }
 
 // resolveDestination creates a Destination instance from a destination ID,
 // falling back to the system default if destID is nil.
-func (s *LocalService) resolveDestination(userID string, destID *string) (Destination, string, error) {
+func (s *LocalService) resolveDestination(ctx context.Context, userID string, destID *string) (Destination, string, error) {
 	var destRecord *db.Destination
 	var err error
 	if destID != nil {
-		destRecord, err = s.db.GetDestinationByID(userID, *destID)
+		destRecord, err = s.db.GetDestinationByID(ctx, userID, *destID)
 	} else {
-		destRecord, err = s.db.GetDefaultDestination(userID)
+		destRecord, err = s.db.GetDefaultDestination(ctx, userID)
 	}
 	if err != nil {
 		return nil, "", err
@@ -963,11 +963,11 @@ func (s *LocalService) resolveDestination(userID string, destID *string) (Destin
 
 // persistDestinationConfig saves updated configuration (e.g., refreshed tokens)
 // if the destination implements ConfigUpdater.
-func (s *LocalService) persistDestinationConfig(userID string, dest Destination, destID string) {
+func (s *LocalService) persistDestinationConfig(ctx context.Context, userID string, dest Destination, destID string) {
 	if updater, ok := dest.(ConfigUpdater); ok {
 		if newConfig := updater.GetUpdatedConfig(); newConfig != nil {
 			configJSON, _ := json.Marshal(newConfig)
-			s.db.UpdateDestinationConfig(userID, destID, string(configJSON))
+			s.db.UpdateDestinationConfig(ctx, userID, destID, string(configJSON))
 		}
 	}
 }
@@ -975,9 +975,9 @@ func (s *LocalService) persistDestinationConfig(userID string, dest Destination,
 // cleanupOldDeliveries removes delivered files beyond the retention limit
 // from both the destination and the tracking database.
 func (s *LocalService) cleanupOldDeliveries(ctx context.Context, userID, deliveryType, deliveryRef string, retain int) {
-	files, err := s.db.GetDeliveredFiles(userID, deliveryType, deliveryRef)
+	files, err := s.db.GetDeliveredFiles(ctx, userID, deliveryType, deliveryRef)
 	if err != nil {
-		log.Printf("[Cleanup] Failed to get delivered files: %v", err)
+		slog.Error("failed to get delivered files", "component", "cleanup", "error", err)
 		return
 	}
 	if len(files) <= retain {
@@ -985,24 +985,24 @@ func (s *LocalService) cleanupOldDeliveries(ctx context.Context, userID, deliver
 	}
 
 	toDelete := files[retain:]
-	log.Printf("[Cleanup] Removing %d old deliveries for %s/%s (keeping %d)", len(toDelete), deliveryType, deliveryRef, retain)
+	slog.Info("removing old deliveries", "component", "cleanup", "count", len(toDelete), "type", deliveryType, "ref", deliveryRef, "keeping", retain)
 
 	for _, f := range toDelete {
 		var destID *string
 		if f.DestinationID != "" {
 			destID = &f.DestinationID
 		}
-		dest, _, err := s.resolveDestination(userID, destID)
+		dest, _, err := s.resolveDestination(ctx, userID, destID)
 		if err != nil {
-			log.Printf("[Cleanup] Cannot resolve destination for %s: %v", f.RemotePath, err)
-			s.db.DeleteDeliveredFile(f.ID)
+			slog.Error("cannot resolve destination", "component", "cleanup", "path", f.RemotePath, "error", err)
+			s.db.DeleteDeliveredFile(ctx, f.ID)
 			continue
 		}
 		if err := dest.Delete(ctx, f.RemotePath); err != nil {
-			log.Printf("[Cleanup] Failed to delete %s: %v", f.RemotePath, err)
+			slog.Error("failed to delete", "component", "cleanup", "path", f.RemotePath, "error", err)
 			// Still remove the tracking record — the file may already be gone
 		}
-		s.db.DeleteDeliveredFile(f.ID)
+		s.db.DeleteDeliveredFile(ctx, f.ID)
 	}
 }
 
@@ -1066,31 +1066,31 @@ func (s *LocalService) AddWebhook(ctx context.Context, webhookType, secret, conf
 		Config: config,
 		Active: true,
 	}
-	return s.db.InsertWebhook(userID, w)
+	return s.db.InsertWebhook(ctx, userID, w)
 }
 
 // ListWebhooks returns all webhooks for the authenticated user.
 func (s *LocalService) ListWebhooks(ctx context.Context) ([]db.Webhook, error) {
-	return s.db.GetWebhooks(UserIDFromContext(ctx))
+	return s.db.GetWebhooks(ctx, UserIDFromContext(ctx))
 }
 
 // RemoveWebhook deletes a webhook.
 func (s *LocalService) RemoveWebhook(ctx context.Context, id string) error {
-	return s.db.DeleteWebhook(UserIDFromContext(ctx), id)
+	return s.db.DeleteWebhook(ctx, UserIDFromContext(ctx), id)
 }
 
 func (s *LocalService) GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error) {
-	return s.db.GetWebhookByID(UserIDFromContext(ctx), id)
+	return s.db.GetWebhookByID(ctx, UserIDFromContext(ctx), id)
 }
 
 // ListCredentials returns all credentials for the authenticated user.
 func (s *LocalService) ListCredentials(ctx context.Context) ([]db.Credential, error) {
-	return s.db.GetCredentials(UserIDFromContext(ctx))
+	return s.db.GetCredentials(ctx, UserIDFromContext(ctx))
 }
 
 // GetCredentialByID returns a single credential by ID.
 func (s *LocalService) GetCredentialByID(ctx context.Context, id string) (*db.Credential, error) {
-	return s.db.GetCredentialByID(UserIDFromContext(ctx), id)
+	return s.db.GetCredentialByID(ctx, UserIDFromContext(ctx), id)
 }
 
 // AddCredential creates a new credential and returns its ID.
@@ -1100,15 +1100,15 @@ func (s *LocalService) AddCredential(ctx context.Context, name, credType, config
 		Type:   credType,
 		Config: config,
 	}
-	return s.db.InsertCredential(UserIDFromContext(ctx), cred)
+	return s.db.InsertCredential(ctx, UserIDFromContext(ctx), cred)
 }
 
 // UpdateCredential updates an existing credential.
 func (s *LocalService) UpdateCredential(ctx context.Context, cred db.Credential) error {
-	return s.db.UpdateCredential(UserIDFromContext(ctx), cred)
+	return s.db.UpdateCredential(ctx, UserIDFromContext(ctx), cred)
 }
 
 // RemoveCredential deletes a credential by ID.
 func (s *LocalService) RemoveCredential(ctx context.Context, id string) error {
-	return s.db.DeleteCredential(UserIDFromContext(ctx), id)
+	return s.db.DeleteCredential(ctx, UserIDFromContext(ctx), id)
 }

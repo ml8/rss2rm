@@ -2,6 +2,7 @@
 package importer
 
 import (
+	"context"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -28,7 +29,7 @@ type FetchOptions struct {
 // Fetch downloads and parses the feed at feedURL, returning up to limit items
 // ordered newest first. If opts is non-nil, its cookies are attached to the
 // HTTP request.
-func Fetch(feedURL string, limit int, opts *FetchOptions) ([]*Item, error) {
+func Fetch(ctx context.Context, feedURL string, limit int, opts *FetchOptions) ([]*Item, error) {
 	fp := gofeed.NewParser()
 	client := &http.Client{
 		Timeout: 30 * time.Second,

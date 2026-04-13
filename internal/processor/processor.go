@@ -4,6 +4,7 @@ package processor
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/url"
@@ -32,7 +33,7 @@ type FetchOptions struct {
 // Process fetches the web page at url, extracts the main article content
 // using readability, and returns a structured [Article]. If opts is non-nil,
 // its cookies are attached to the HTTP request.
-func Process(url string, opts *FetchOptions) (*Article, error) {
+func Process(ctx context.Context, url string, opts *FetchOptions) (*Article, error) {
 	var modifiers []readability.RequestWith
 	if opts != nil && len(opts.Cookies) > 0 {
 		modifiers = append(modifiers, func(r *http.Request) {
@@ -68,7 +69,7 @@ func Process(url string, opts *FetchOptions) (*Article, error) {
 
 // ProcessReader extracts article content from an already-fetched HTML body.
 // Used when the caller manages the HTTP request (e.g., for cookie-jar auth).
-func ProcessReader(body io.Reader, pageURL *url.URL) (*Article, error) {
+func ProcessReader(ctx context.Context, body io.Reader, pageURL *url.URL) (*Article, error) {
 	article, err := readability.FromReader(body, pageURL)
 	if err != nil {
 		return nil, err

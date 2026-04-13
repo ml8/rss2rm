@@ -45,7 +45,7 @@ type PageData struct {
 const defaultCommandTimeout = 10 * time.Minute
 
 // GenerateHTML renders an article to an HTML temp file and returns its path.
-func GenerateHTML(title, content, byline string) (string, error) {
+func GenerateHTML(ctx context.Context, title, content, byline string) (string, error) {
 	tmpl, err := template.New("page").Parse(htmlTemplate)
 	if err != nil {
 		return "", err
@@ -73,7 +73,7 @@ func GenerateHTML(title, content, byline string) (string, error) {
 // HTMLToPDF converts an HTML file to PDF by executing commandTemplate,
 // replacing {url} and {output} placeholders with the source and
 // destination paths.
-func HTMLToPDF(htmlPath, pdfPath, commandTemplate string) error {
+func HTMLToPDF(ctx context.Context, htmlPath, pdfPath, commandTemplate string) error {
 	inputURL := "file://" + htmlPath
 	inputURL = fmt.Sprintf("%q", inputURL)
 	pdfPath = fmt.Sprintf("%q", pdfPath)
@@ -89,12 +89,12 @@ func HTMLToPDF(htmlPath, pdfPath, commandTemplate string) error {
 		return fmt.Errorf("empty command")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), defaultCommandTimeout)
+	timeoutCtx, cancel := context.WithTimeout(ctx, defaultCommandTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, parts[0], parts[1:]...)
+	cmd := exec.CommandContext(timeoutCtx, parts[0], parts[1:]...)
 	output, err := cmd.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
+	if timeoutCtx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("command timed out after %s", defaultCommandTimeout)
 	}
 	if err != nil {
@@ -159,7 +159,7 @@ type digestData struct {
 
 // GenerateDigestHTML produces a single HTML file combining multiple articles
 // with a table of contents.
-func GenerateDigestHTML(title string, articles []DigestArticle) (string, error) {
+func GenerateDigestHTML(ctx context.Context, title string, articles []DigestArticle) (string, error) {
 	tmpl, err := template.New("digest").Parse(digestHTMLTemplate)
 	if err != nil {
 		return "", err

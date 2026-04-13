@@ -4,6 +4,7 @@
 package db
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -338,10 +339,10 @@ func (d *DB) upsertSetting(key, value string) error {
 
 // --- Destination methods ---
 
-func (db *DB) InsertDestination(userID string, d Destination) (string, error) {
+func (db *DB) InsertDestination(ctx context.Context, userID string, d Destination) (string, error) {
 	d.ID = uuid.New().String()
 	d.UserID = userID
-	_, err := db.Exec(`
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO destinations (id, name, type, config, is_default, user_id)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, d.ID, d.Name, d.Type, d.Config, d.IsDefault, d.UserID)
@@ -351,9 +352,9 @@ func (db *DB) InsertDestination(userID string, d Destination) (string, error) {
 	return d.ID, nil
 }
 
-func (db *DB) GetDestinations(userID string) ([]Destination, error) {
+func (db *DB) GetDestinations(ctx context.Context, userID string) ([]Destination, error) {
 	query := `SELECT id, name, type, config, is_default, user_id FROM destinations WHERE user_id = ?`
-	rows, err := db.Query(query, userID)
+	rows, err := db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -373,9 +374,9 @@ func (db *DB) GetDestinations(userID string) ([]Destination, error) {
 	return dests, nil
 }
 
-func (db *DB) GetDestinationByID(userID string, id string) (*Destination, error) {
+func (db *DB) GetDestinationByID(ctx context.Context, userID string, id string) (*Destination, error) {
 	query := `SELECT id, name, type, config, is_default, user_id FROM destinations WHERE id = ? AND user_id = ?`
-	row := db.QueryRow(query, id, userID)
+	row := db.QueryRowContext(ctx, query, id, userID)
 	var d Destination
 	if err := row.Scan(&d.ID, &d.Name, &d.Type, &d.Config, &d.IsDefault, &d.UserID); err != nil {
 		if err == sql.ErrNoRows {
@@ -386,9 +387,9 @@ func (db *DB) GetDestinationByID(userID string, id string) (*Destination, error)
 	return &d, nil
 }
 
-func (db *DB) GetDefaultDestination(userID string) (*Destination, error) {
+func (db *DB) GetDefaultDestination(ctx context.Context, userID string) (*Destination, error) {
 	query := `SELECT id, name, type, config, is_default, user_id FROM destinations WHERE is_default = 1 AND user_id = ? LIMIT 1`
-	row := db.QueryRow(query, userID)
+	row := db.QueryRowContext(ctx, query, userID)
 	var d Destination
 	if err := row.Scan(&d.ID, &d.Name, &d.Type, &d.Config, &d.IsDefault, &d.UserID); err != nil {
 		if err == sql.ErrNoRows {
@@ -399,7 +400,7 @@ func (db *DB) GetDefaultDestination(userID string) (*Destination, error) {
 	return &d, nil
 }
 
-func (db *DB) SetDefaultDestination(userID string, id string) error {
+func (db *DB) SetDefaultDestination(ctx context.Context, userID string, id string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -416,27 +417,27 @@ func (db *DB) SetDefaultDestination(userID string, id string) error {
 	return tx.Commit()
 }
 
-func (db *DB) RemoveDestination(userID string, id string) error {
-	_, err := db.Exec("DELETE FROM destinations WHERE id = ? AND user_id = ?", id, userID)
+func (db *DB) RemoveDestination(ctx context.Context, userID string, id string) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM destinations WHERE id = ? AND user_id = ?", id, userID)
 	return err
 }
 
-func (db *DB) UpdateDestinationConfig(userID string, id string, config string) error {
-	_, err := db.Exec("UPDATE destinations SET config = ? WHERE id = ? AND user_id = ?", config, id, userID)
+func (db *DB) UpdateDestinationConfig(ctx context.Context, userID string, id string, config string) error {
+	_, err := db.ExecContext(ctx, "UPDATE destinations SET config = ? WHERE id = ? AND user_id = ?", config, id, userID)
 	return err
 }
 
-func (db *DB) UpdateDestination(userID string, id string, name string, config string) error {
-	_, err := db.Exec("UPDATE destinations SET name = ?, config = ? WHERE id = ? AND user_id = ?", name, config, id, userID)
+func (db *DB) UpdateDestination(ctx context.Context, userID string, id string, name string, config string) error {
+	_, err := db.ExecContext(ctx, "UPDATE destinations SET name = ?, config = ? WHERE id = ? AND user_id = ?", name, config, id, userID)
 	return err
 }
 
 // --- Feed methods ---
 
-func (db *DB) InsertFeed(userID string, f Feed) (string, error) {
+func (db *DB) InsertFeed(ctx context.Context, userID string, f Feed) (string, error) {
 	f.ID = uuid.New().String()
 	f.UserID = userID
-	_, err := db.Exec(`
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO feeds (id, url, name, active, backfill, credential_id, user_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`, f.ID, f.URL, f.Name, f.Active, f.Backfill, f.CredentialID, f.UserID)
@@ -446,24 +447,24 @@ func (db *DB) InsertFeed(userID string, f Feed) (string, error) {
 	return f.ID, nil
 }
 
-func (db *DB) DeactivateFeed(userID string, url string) error {
-	_, err := db.Exec("UPDATE feeds SET active = 0 WHERE url = ? AND user_id = ?", url, userID)
+func (db *DB) DeactivateFeed(ctx context.Context, userID string, url string) error {
+	_, err := db.ExecContext(ctx, "UPDATE feeds SET active = 0 WHERE url = ? AND user_id = ?", url, userID)
 	return err
 }
 
-func (db *DB) DeactivateFeedByID(userID string, id string) error {
-	_, err := db.Exec("UPDATE feeds SET active = 0 WHERE id = ? AND user_id = ?", id, userID)
+func (db *DB) DeactivateFeedByID(ctx context.Context, userID string, id string) error {
+	_, err := db.ExecContext(ctx, "UPDATE feeds SET active = 0 WHERE id = ? AND user_id = ?", id, userID)
 	return err
 }
 
-func (db *DB) DeactivateFeedsByURLExceptID(userID string, url string, id string) error {
-	_, err := db.Exec("UPDATE feeds SET active = 0 WHERE url = ? AND id != ? AND user_id = ?", url, id, userID)
+func (db *DB) DeactivateFeedsByURLExceptID(ctx context.Context, userID string, url string, id string) error {
+	_, err := db.ExecContext(ctx, "UPDATE feeds SET active = 0 WHERE url = ? AND id != ? AND user_id = ?", url, id, userID)
 	return err
 }
 
-func (db *DB) GetActiveFeedByURL(userID string, url string) (*Feed, error) {
+func (db *DB) GetActiveFeedByURL(ctx context.Context, userID string, url string) (*Feed, error) {
 	query := `SELECT id, url, name, last_polled, active, backfill, credential_id, user_id FROM feeds WHERE active = 1 AND url = ? AND user_id = ? ORDER BY id LIMIT 1`
-	row := db.QueryRow(query, url, userID)
+	row := db.QueryRowContext(ctx, query, url, userID)
 
 	f, err := scanFeed(row)
 	if err == sql.ErrNoRows {
@@ -475,17 +476,17 @@ func (db *DB) GetActiveFeedByURL(userID string, url string) (*Feed, error) {
 	return f, nil
 }
 
-func (db *DB) UpdateFeed(userID string, f Feed) error {
-	_, err := db.Exec(`
+func (db *DB) UpdateFeed(ctx context.Context, userID string, f Feed) error {
+	_, err := db.ExecContext(ctx, `
 		UPDATE feeds SET url = ?, name = ?, active = ?, backfill = ?, credential_id = ?
 		WHERE id = ? AND user_id = ?
 	`, f.URL, f.Name, f.Active, f.Backfill, f.CredentialID, f.ID, userID)
 	return err
 }
 
-func (db *DB) GetActiveFeeds(userID string) ([]Feed, error) {
+func (db *DB) GetActiveFeeds(ctx context.Context, userID string) ([]Feed, error) {
 	query := `SELECT id, url, name, last_polled, active, backfill, credential_id, user_id FROM feeds WHERE active = 1 AND url NOT LIKE '_ingest:%' AND user_id = ?`
-	rows, err := db.Query(query, userID)
+	rows, err := db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -505,8 +506,8 @@ func (db *DB) GetActiveFeeds(userID string) ([]Feed, error) {
 	return feeds, nil
 }
 
-func (db *DB) MarkFeedPolled(id string) error {
-	_, err := db.Exec("UPDATE feeds SET last_polled = ? WHERE id = ?", time.Now(), id)
+func (db *DB) MarkFeedPolled(ctx context.Context, id string) error {
+	_, err := db.ExecContext(ctx, "UPDATE feeds SET last_polled = ? WHERE id = ?", time.Now(), id)
 	return err
 }
 
@@ -559,26 +560,26 @@ func scanUser(s scanner) (*User, error) {
 
 // --- Entry methods ---
 
-func (db *DB) HasEntry(userID string, feedID string, entryID string) (bool, error) {
+func (db *DB) HasEntry(ctx context.Context, userID string, feedID string, entryID string) (bool, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM entries WHERE feed_id = ? AND entry_id = ? AND user_id = ?", feedID, entryID, userID).Scan(&count)
+	err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM entries WHERE feed_id = ? AND entry_id = ? AND user_id = ?", feedID, entryID, userID).Scan(&count)
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
 }
 
-func (db *DB) CreateEntry(userID string, e Entry) error {
-	_, err := db.Exec(`
+func (db *DB) CreateEntry(ctx context.Context, userID string, e Entry) error {
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO entries (feed_id, entry_id, title, url, published, rendered, content, user_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, e.FeedID, e.EntryID, e.Title, e.URL, e.Published, e.Rendered, e.Content, userID)
 	return wrapUniqueErr(err)
 }
 
-func (db *DB) GetEntry(userID string, feedID string, entryID string) (*Entry, error) {
+func (db *DB) GetEntry(ctx context.Context, userID string, feedID string, entryID string) (*Entry, error) {
 	query := `SELECT id, feed_id, entry_id, title, url, published, COALESCE(rendered, ''), COALESCE(content, ''), user_id FROM entries WHERE feed_id = ? AND entry_id = ? AND user_id = ?`
-	row := db.QueryRow(query, feedID, entryID, userID)
+	row := db.QueryRowContext(ctx, query, feedID, entryID, userID)
 	var e Entry
 	if err := row.Scan(&e.ID, &e.FeedID, &e.EntryID, &e.Title, &e.URL, &e.Published, &e.Rendered, &e.Content, &e.UserID); err != nil {
 		if err == sql.ErrNoRows {
@@ -590,17 +591,17 @@ func (db *DB) GetEntry(userID string, feedID string, entryID string) (*Entry, er
 }
 
 // UpdateEntryRendered sets the rendered PDF path for an entry.
-func (db *DB) UpdateEntryRendered(entryID int64, rendered string) error {
-	_, err := db.Exec("UPDATE entries SET rendered = ? WHERE id = ?", rendered, entryID)
+func (db *DB) UpdateEntryRendered(ctx context.Context, entryID int64, rendered string) error {
+	_, err := db.ExecContext(ctx, "UPDATE entries SET rendered = ? WHERE id = ?", rendered, entryID)
 	return err
 }
 
 // --- FeedDelivery methods ---
 
 // GetFeedDelivery returns the delivery config for a feed.
-func (db *DB) GetFeedDelivery(userID string, feedID string) (*FeedDelivery, error) {
+func (db *DB) GetFeedDelivery(ctx context.Context, userID string, feedID string) (*FeedDelivery, error) {
 	query := `SELECT feed_id, directory, destination_id, last_delivered_id, retain, user_id FROM feed_delivery WHERE feed_id = ? AND user_id = ?`
-	row := db.QueryRow(query, feedID, userID)
+	row := db.QueryRowContext(ctx, query, feedID, userID)
 
 	var fd FeedDelivery
 	var destID sql.NullString
@@ -617,34 +618,34 @@ func (db *DB) GetFeedDelivery(userID string, feedID string) (*FeedDelivery, erro
 }
 
 // SetFeedDelivery upserts a feed delivery record.
-func (db *DB) SetFeedDelivery(userID string, fd FeedDelivery) error {
+func (db *DB) SetFeedDelivery(ctx context.Context, userID string, fd FeedDelivery) error {
 	if db.driver == "mysql" {
-		_, err := db.Exec(`INSERT INTO feed_delivery (feed_id, directory, destination_id, last_delivered_id, retain, user_id) VALUES (?, ?, ?, ?, ?, ?)
+		_, err := db.ExecContext(ctx, `INSERT INTO feed_delivery (feed_id, directory, destination_id, last_delivered_id, retain, user_id) VALUES (?, ?, ?, ?, ?, ?)
 			ON DUPLICATE KEY UPDATE directory = VALUES(directory), destination_id = VALUES(destination_id), last_delivered_id = VALUES(last_delivered_id), retain = VALUES(retain)`,
 			fd.FeedID, fd.Directory, fd.DestinationID, fd.LastDeliveredID, fd.Retain, userID)
 		return err
 	}
-	_, err := db.Exec(`INSERT OR REPLACE INTO feed_delivery (feed_id, directory, destination_id, last_delivered_id, retain, user_id) VALUES (?, ?, ?, ?, ?, ?)`,
+	_, err := db.ExecContext(ctx, `INSERT OR REPLACE INTO feed_delivery (feed_id, directory, destination_id, last_delivered_id, retain, user_id) VALUES (?, ?, ?, ?, ?, ?)`,
 		fd.FeedID, fd.Directory, fd.DestinationID, fd.LastDeliveredID, fd.Retain, userID)
 	return err
 }
 
 // RemoveFeedDelivery deletes the delivery config for a feed.
-func (db *DB) RemoveFeedDelivery(userID string, feedID string) error {
-	_, err := db.Exec("DELETE FROM feed_delivery WHERE feed_id = ? AND user_id = ?", feedID, userID)
+func (db *DB) RemoveFeedDelivery(ctx context.Context, userID string, feedID string) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM feed_delivery WHERE feed_id = ? AND user_id = ?", feedID, userID)
 	return err
 }
 
 // AdvanceFeedDelivery updates the last_delivered_id cursor.
-func (db *DB) AdvanceFeedDelivery(feedID string, entryID int64) error {
-	_, err := db.Exec("UPDATE feed_delivery SET last_delivered_id = ? WHERE feed_id = ?", entryID, feedID)
+func (db *DB) AdvanceFeedDelivery(ctx context.Context, feedID string, entryID int64) error {
+	_, err := db.ExecContext(ctx, "UPDATE feed_delivery SET last_delivered_id = ? WHERE feed_id = ?", entryID, feedID)
 	return err
 }
 
 // GetUndeliveredEntries returns entries newer than lastDeliveredID for a feed.
-func (db *DB) GetUndeliveredEntries(feedID string, lastDeliveredID int64) ([]Entry, error) {
+func (db *DB) GetUndeliveredEntries(ctx context.Context, feedID string, lastDeliveredID int64) ([]Entry, error) {
 	query := `SELECT id, feed_id, entry_id, title, url, published, COALESCE(rendered, ''), COALESCE(content, '') FROM entries WHERE feed_id = ? AND id > ? ORDER BY id`
-	rows, err := db.Query(query, feedID, lastDeliveredID)
+	rows, err := db.QueryContext(ctx, query, feedID, lastDeliveredID)
 	if err != nil {
 		return nil, err
 	}
@@ -667,10 +668,10 @@ func (db *DB) GetUndeliveredEntries(feedID string, lastDeliveredID int64) ([]Ent
 // --- Digest methods ---
 
 // InsertDigest creates a new digest.
-func (db *DB) InsertDigest(userID string, d Digest) (string, error) {
+func (db *DB) InsertDigest(ctx context.Context, userID string, d Digest) (string, error) {
 	d.ID = uuid.New().String()
 	d.UserID = userID
-	_, err := db.Exec(`
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO digests (id, name, directory, schedule, destination_id, active, retain, user_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, d.ID, d.Name, d.Directory, d.Schedule, d.DestinationID, d.Active, d.Retain, d.UserID)
@@ -681,9 +682,9 @@ func (db *DB) InsertDigest(userID string, d Digest) (string, error) {
 }
 
 // GetDigests returns all digests.
-func (db *DB) GetDigests(userID string) ([]Digest, error) {
+func (db *DB) GetDigests(ctx context.Context, userID string) ([]Digest, error) {
 	query := `SELECT id, name, COALESCE(directory, ''), schedule, destination_id, last_generated, COALESCE(last_delivered_id, 0), active, retain, user_id FROM digests WHERE user_id = ?`
-	rows, err := db.Query(query, userID)
+	rows, err := db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -704,9 +705,9 @@ func (db *DB) GetDigests(userID string) ([]Digest, error) {
 }
 
 // GetActiveDigests returns digests where active = 1.
-func (db *DB) GetActiveDigests(userID string) ([]Digest, error) {
+func (db *DB) GetActiveDigests(ctx context.Context, userID string) ([]Digest, error) {
 	query := `SELECT id, name, COALESCE(directory, ''), schedule, destination_id, last_generated, COALESCE(last_delivered_id, 0), active, retain, user_id FROM digests WHERE active = 1 AND user_id = ?`
-	rows, err := db.Query(query, userID)
+	rows, err := db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -727,9 +728,9 @@ func (db *DB) GetActiveDigests(userID string) ([]Digest, error) {
 }
 
 // GetDigestByID returns a single digest by ID.
-func (db *DB) GetDigestByID(userID string, id string) (*Digest, error) {
+func (db *DB) GetDigestByID(ctx context.Context, userID string, id string) (*Digest, error) {
 	query := `SELECT id, name, COALESCE(directory, ''), schedule, destination_id, last_generated, COALESCE(last_delivered_id, 0), active, retain, user_id FROM digests WHERE id = ? AND user_id = ?`
-	row := db.QueryRow(query, id, userID)
+	row := db.QueryRowContext(ctx, query, id, userID)
 
 	d, err := scanDigest(row)
 	if err == sql.ErrNoRows {
@@ -742,24 +743,24 @@ func (db *DB) GetDigestByID(userID string, id string) (*Digest, error) {
 }
 
 // UpdateDigest updates a digest's mutable fields.
-func (db *DB) UpdateDigest(userID string, d Digest) error {
-	_, err := db.Exec(`UPDATE digests SET name = ?, directory = ?, schedule = ?, destination_id = ?, active = ?, retain = ? WHERE id = ? AND user_id = ?`,
+func (db *DB) UpdateDigest(ctx context.Context, userID string, d Digest) error {
+	_, err := db.ExecContext(ctx, `UPDATE digests SET name = ?, directory = ?, schedule = ?, destination_id = ?, active = ?, retain = ? WHERE id = ? AND user_id = ?`,
 		d.Name, d.Directory, d.Schedule, d.DestinationID, d.Active, d.Retain, d.ID, userID)
 	return err
 }
 
 // RemoveDigest deletes a digest and its feed associations.
-func (db *DB) RemoveDigest(userID string, id string) error {
-	if _, err := db.Exec("DELETE FROM digest_feeds WHERE digest_id = ?", id); err != nil {
+func (db *DB) RemoveDigest(ctx context.Context, userID string, id string) error {
+	if _, err := db.ExecContext(ctx, "DELETE FROM digest_feeds WHERE digest_id = ?", id); err != nil {
 		return err
 	}
-	_, err := db.Exec("DELETE FROM digests WHERE id = ? AND user_id = ?", id, userID)
+	_, err := db.ExecContext(ctx, "DELETE FROM digests WHERE id = ? AND user_id = ?", id, userID)
 	return err
 }
 
 // MarkDigestGenerated updates last_generated and last_delivered_id.
-func (db *DB) MarkDigestGenerated(id string, lastEntryID int64) error {
-	_, err := db.Exec("UPDATE digests SET last_generated = ?, last_delivered_id = ? WHERE id = ?", time.Now(), lastEntryID, id)
+func (db *DB) MarkDigestGenerated(ctx context.Context, id string, lastEntryID int64) error {
+	_, err := db.ExecContext(ctx, "UPDATE digests SET last_generated = ?, last_delivered_id = ? WHERE id = ?", time.Now(), lastEntryID, id)
 	return err
 }
 
@@ -784,28 +785,28 @@ func scanDigest(s scanner) (*Digest, error) {
 // --- digest_feeds methods ---
 
 // AddFeedToDigest links a feed to a digest.
-func (db *DB) AddFeedToDigest(digestID, feedID string) error {
+func (db *DB) AddFeedToDigest(ctx context.Context, digestID, feedID string) error {
 	if db.driver == "mysql" {
-		_, err := db.Exec("INSERT IGNORE INTO digest_feeds (digest_id, feed_id) VALUES (?, ?)", digestID, feedID)
+		_, err := db.ExecContext(ctx, "INSERT IGNORE INTO digest_feeds (digest_id, feed_id) VALUES (?, ?)", digestID, feedID)
 		return err
 	}
-	_, err := db.Exec("INSERT OR IGNORE INTO digest_feeds (digest_id, feed_id) VALUES (?, ?)", digestID, feedID)
+	_, err := db.ExecContext(ctx, "INSERT OR IGNORE INTO digest_feeds (digest_id, feed_id) VALUES (?, ?)", digestID, feedID)
 	return err
 }
 
 // RemoveFeedFromDigest unlinks a feed from a digest.
-func (db *DB) RemoveFeedFromDigest(digestID, feedID string) error {
-	_, err := db.Exec("DELETE FROM digest_feeds WHERE digest_id = ? AND feed_id = ?", digestID, feedID)
+func (db *DB) RemoveFeedFromDigest(ctx context.Context, digestID, feedID string) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM digest_feeds WHERE digest_id = ? AND feed_id = ?", digestID, feedID)
 	return err
 }
 
 // GetFeedsForDigest returns all active feeds belonging to a digest.
-func (db *DB) GetFeedsForDigest(userID string, digestID string) ([]Feed, error) {
+func (db *DB) GetFeedsForDigest(ctx context.Context, userID string, digestID string) ([]Feed, error) {
 	query := `SELECT f.id, f.url, f.name, f.last_polled, f.active, f.backfill, f.credential_id, f.user_id
 		FROM feeds f
 		JOIN digest_feeds df ON f.id = df.feed_id
 		WHERE df.digest_id = ? AND f.active = 1 AND f.user_id = ?`
-	rows, err := db.Query(query, digestID, userID)
+	rows, err := db.QueryContext(ctx, query, digestID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -826,12 +827,12 @@ func (db *DB) GetFeedsForDigest(userID string, digestID string) ([]Feed, error) 
 }
 
 // GetDigestsForFeed returns all digests that include a feed.
-func (db *DB) GetDigestsForFeed(userID string, feedID string) ([]Digest, error) {
+func (db *DB) GetDigestsForFeed(ctx context.Context, userID string, feedID string) ([]Digest, error) {
 	query := `SELECT d.id, d.name, COALESCE(d.directory, ''), d.schedule, d.destination_id, d.last_generated, COALESCE(d.last_delivered_id, 0), d.active, d.retain, d.user_id
 		FROM digests d
 		JOIN digest_feeds df ON d.id = df.digest_id
 		WHERE df.feed_id = ? AND d.user_id = ?`
-	rows, err := db.Query(query, feedID, userID)
+	rows, err := db.QueryContext(ctx, query, feedID, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -852,7 +853,7 @@ func (db *DB) GetDigestsForFeed(userID string, feedID string) ([]Digest, error) 
 }
 
 // GetNewEntriesForDigest returns entries newer than lastDeliveredID for all feeds in a digest.
-func (db *DB) GetNewEntriesForDigest(digestID string, lastDeliveredID int64) ([]Entry, error) {
+func (db *DB) GetNewEntriesForDigest(ctx context.Context, digestID string, lastDeliveredID int64) ([]Entry, error) {
 	query := `
 		SELECT e.id, e.feed_id, e.entry_id, e.title, e.url, e.published, COALESCE(e.rendered, ''), COALESCE(e.content, '')
 		FROM entries e
@@ -860,7 +861,7 @@ func (db *DB) GetNewEntriesForDigest(digestID string, lastDeliveredID int64) ([]
 		WHERE df.digest_id = ? AND e.id > ?
 		ORDER BY e.id
 	`
-	rows, err := db.Query(query, digestID, lastDeliveredID)
+	rows, err := db.QueryContext(ctx, query, digestID, lastDeliveredID)
 	if err != nil {
 		return nil, err
 	}
@@ -881,13 +882,13 @@ func (db *DB) GetNewEntriesForDigest(digestID string, lastDeliveredID int64) ([]
 }
 
 // CreateUser inserts a new user with a bcrypt-hashed password.
-func (db *DB) CreateUser(email, password string) (string, error) {
+func (db *DB) CreateUser(ctx context.Context, email, password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return "", fmt.Errorf("failed to hash password: %w", err)
 	}
 	id := uuid.New().String()
-	_, err = db.Exec("INSERT INTO users (id, email, password_hash, verified) VALUES (?, ?, ?, 1)", id, email, string(hash))
+	_, err = db.ExecContext(ctx, "INSERT INTO users (id, email, password_hash, verified) VALUES (?, ?, ?, 1)", id, email, string(hash))
 	if err != nil {
 		return "", wrapUniqueErr(err)
 	}
@@ -895,7 +896,7 @@ func (db *DB) CreateUser(email, password string) (string, error) {
 }
 
 // CreateUnverifiedUser inserts a new user with verified=false and a verification token.
-func (db *DB) CreateUnverifiedUser(email, password string, verifyTimeout time.Duration) (id, token string, err error) {
+func (db *DB) CreateUnverifiedUser(ctx context.Context, email, password string, verifyTimeout time.Duration) (id, token string, err error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to hash password: %w", err)
@@ -905,7 +906,7 @@ func (db *DB) CreateUnverifiedUser(email, password string, verifyTimeout time.Du
 	rand.Read(b)
 	token = hex.EncodeToString(b)
 	expires := time.Now().Add(verifyTimeout)
-	_, err = db.Exec("INSERT INTO users (id, email, password_hash, verified, verify_token, verify_expires) VALUES (?, ?, ?, 0, ?, ?)",
+	_, err = db.ExecContext(ctx, "INSERT INTO users (id, email, password_hash, verified, verify_token, verify_expires) VALUES (?, ?, ?, 0, ?, ?)",
 		id, email, string(hash), token, expires)
 	if err != nil {
 		return "", "", wrapUniqueErr(err)
@@ -915,22 +916,22 @@ func (db *DB) CreateUnverifiedUser(email, password string, verifyTimeout time.Du
 
 // VerifyUserByToken finds a user by verification token and marks them verified.
 // Returns the user ID if successful, empty string if token is invalid or expired.
-func (db *DB) VerifyUserByToken(token string) (string, error) {
+func (db *DB) VerifyUserByToken(ctx context.Context, token string) (string, error) {
 	var userID string
-	err := db.QueryRow("SELECT id FROM users WHERE verify_token = ? AND verify_expires > ?", token, time.Now()).Scan(&userID)
+	err := db.QueryRowContext(ctx, "SELECT id FROM users WHERE verify_token = ? AND verify_expires > ?", token, time.Now()).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", nil
 		}
 		return "", err
 	}
-	_, err = db.Exec("UPDATE users SET verified = 1, verify_token = NULL, verify_expires = NULL WHERE id = ?", userID)
+	_, err = db.ExecContext(ctx, "UPDATE users SET verified = 1, verify_token = NULL, verify_expires = NULL WHERE id = ?", userID)
 	return userID, err
 }
 
 // GetUserByEmail returns the user with the given email, or nil if not found.
-func (db *DB) GetUserByEmail(email string) (*User, error) {
-	row := db.QueryRow("SELECT id, email, password_hash, verified, verify_token, verify_expires, created_at FROM users WHERE email = ?", email)
+func (db *DB) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	row := db.QueryRowContext(ctx, "SELECT id, email, password_hash, verified, verify_token, verify_expires, created_at FROM users WHERE email = ?", email)
 	u, err := scanUser(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -942,8 +943,8 @@ func (db *DB) GetUserByEmail(email string) (*User, error) {
 }
 
 // GetUserByID returns the user with the given ID, or nil if not found.
-func (db *DB) GetUserByID(id string) (*User, error) {
-	row := db.QueryRow("SELECT id, email, password_hash, verified, verify_token, verify_expires, created_at FROM users WHERE id = ?", id)
+func (db *DB) GetUserByID(ctx context.Context, id string) (*User, error) {
+	row := db.QueryRowContext(ctx, "SELECT id, email, password_hash, verified, verify_token, verify_expires, created_at FROM users WHERE id = ?", id)
 	u, err := scanUser(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -955,9 +956,9 @@ func (db *DB) GetUserByID(id string) (*User, error) {
 }
 
 // GetUserCount returns the total number of registered users.
-func (db *DB) GetUserCount() (int, error) {
+func (db *DB) GetUserCount(ctx context.Context) (int, error) {
 	var count int
-	err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count)
 	return count, err
 }
 
@@ -967,7 +968,7 @@ func CheckPassword(user *User, password string) bool {
 }
 
 // CreateSession generates a cryptographically random session token and stores it.
-func (db *DB) CreateSession(userID string) (*Session, error) {
+func (db *DB) CreateSession(ctx context.Context, userID string) (*Session, error) {
 	b := make([]byte, sessionTokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return nil, fmt.Errorf("failed to generate session token: %w", err)
@@ -975,7 +976,7 @@ func (db *DB) CreateSession(userID string) (*Session, error) {
 	token := hex.EncodeToString(b)
 	expiresAt := time.Now().Add(sessionDuration)
 
-	_, err := db.Exec(
+	_, err := db.ExecContext(ctx, 
 		"INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
 		token, userID, expiresAt,
 	)
@@ -986,8 +987,8 @@ func (db *DB) CreateSession(userID string) (*Session, error) {
 }
 
 // GetSession returns the session for a token, or nil if not found or expired.
-func (db *DB) GetSession(token string) (*Session, error) {
-	row := db.QueryRow(
+func (db *DB) GetSession(ctx context.Context, token string) (*Session, error) {
+	row := db.QueryRowContext(ctx, 
 		"SELECT token, user_id, created_at, expires_at FROM sessions WHERE token = ? AND expires_at > ?",
 		token, time.Now(),
 	)
@@ -1002,20 +1003,20 @@ func (db *DB) GetSession(token string) (*Session, error) {
 }
 
 // DeleteSession removes a session by token (logout).
-func (db *DB) DeleteSession(token string) error {
-	_, err := db.Exec("DELETE FROM sessions WHERE token = ?", token)
+func (db *DB) DeleteSession(ctx context.Context, token string) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", token)
 	return err
 }
 
 // CleanExpiredSessions removes all expired sessions.
-func (db *DB) CleanExpiredSessions() error {
-	_, err := db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now())
+func (db *DB) CleanExpiredSessions(ctx context.Context) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM sessions WHERE expires_at < ?", time.Now())
 	return err
 }
 
 // GetAllUsers returns all registered users.
-func (db *DB) GetAllUsers() ([]User, error) {
-	rows, err := db.Query("SELECT id, email, password_hash, verified, verify_token, verify_expires, created_at FROM users")
+func (db *DB) GetAllUsers(ctx context.Context) ([]User, error) {
+	rows, err := db.QueryContext(ctx, "SELECT id, email, password_hash, verified, verify_token, verify_expires, created_at FROM users")
 	if err != nil {
 		return nil, err
 	}
@@ -1036,15 +1037,15 @@ func (db *DB) GetAllUsers() ([]User, error) {
 }
 
 // RecordDeliveredFile stores a record of a file uploaded to a destination.
-func (db *DB) RecordDeliveredFile(f DeliveredFile) error {
-	_, err := db.Exec(`INSERT INTO delivered_files (user_id, delivery_type, delivery_ref, entry_id, remote_path, destination_id) VALUES (?, ?, ?, ?, ?, ?)`,
+func (db *DB) RecordDeliveredFile(ctx context.Context, f DeliveredFile) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO delivered_files (user_id, delivery_type, delivery_ref, entry_id, remote_path, destination_id) VALUES (?, ?, ?, ?, ?, ?)`,
 		f.UserID, f.DeliveryType, f.DeliveryRef, f.EntryID, f.RemotePath, f.DestinationID)
 	return err
 }
 
 // GetDeliveredFiles returns delivered files for a delivery, ordered newest first.
-func (db *DB) GetDeliveredFiles(userID, deliveryType, deliveryRef string) ([]DeliveredFile, error) {
-	rows, err := db.Query(`SELECT id, user_id, delivery_type, delivery_ref, entry_id, remote_path, destination_id, delivered_at 
+func (db *DB) GetDeliveredFiles(ctx context.Context, userID, deliveryType, deliveryRef string) ([]DeliveredFile, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, user_id, delivery_type, delivery_ref, entry_id, remote_path, destination_id, delivered_at 
 		FROM delivered_files WHERE user_id = ? AND delivery_type = ? AND delivery_ref = ? ORDER BY delivered_at DESC, id DESC`,
 		userID, deliveryType, deliveryRef)
 	if err != nil {
@@ -1066,15 +1067,15 @@ func (db *DB) GetDeliveredFiles(userID, deliveryType, deliveryRef string) ([]Del
 }
 
 // DeleteDeliveredFile removes a delivered file record by ID.
-func (db *DB) DeleteDeliveredFile(id int64) error {
-	_, err := db.Exec("DELETE FROM delivered_files WHERE id = ?", id)
+func (db *DB) DeleteDeliveredFile(ctx context.Context, id int64) error {
+	_, err := db.ExecContext(ctx, "DELETE FROM delivered_files WHERE id = ?", id)
 	return err
 }
 
 // GetRecentDeliveries returns the most recent deliveries for a user,
 // joining with entries, feeds, destinations, and digests to produce
 // display-ready rows.
-func (db *DB) GetRecentDeliveries(userID string, limit int) ([]DeliveryLogEntry, error) {
+func (db *DB) GetRecentDeliveries(ctx context.Context, userID string, limit int) ([]DeliveryLogEntry, error) {
 	query := `
 		SELECT
 			df.id,
@@ -1100,7 +1101,7 @@ func (db *DB) GetRecentDeliveries(userID string, limit int) ([]DeliveryLogEntry,
 		ORDER BY df.delivered_at DESC, df.id DESC
 		LIMIT ?
 	`
-	rows, err := db.Query(query, userID, limit)
+	rows, err := db.QueryContext(ctx, query, userID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1125,10 +1126,10 @@ func (db *DB) GetRecentDeliveries(userID string, limit int) ([]DeliveryLogEntry,
 // InsertWebhook creates a new webhook and generates a random secret.
 // InsertWebhook creates a new webhook. The caller must provide the secret
 // (e.g., copied from the external service like Miniflux).
-func (db *DB) InsertWebhook(userID string, w Webhook) (string, error) {
+func (db *DB) InsertWebhook(ctx context.Context, userID string, w Webhook) (string, error) {
 	w.ID = uuid.New().String()
 	w.UserID = userID
-	_, err := db.Exec(`INSERT INTO webhooks (id, user_id, type, secret, config, active) VALUES (?, ?, ?, ?, ?, ?)`,
+	_, err := db.ExecContext(ctx, `INSERT INTO webhooks (id, user_id, type, secret, config, active) VALUES (?, ?, ?, ?, ?, ?)`,
 		w.ID, w.UserID, w.Type, w.Secret, w.Config, w.Active)
 	if err != nil {
 		return "", err
@@ -1137,8 +1138,8 @@ func (db *DB) InsertWebhook(userID string, w Webhook) (string, error) {
 }
 
 // GetWebhooks returns all webhooks for a user.
-func (db *DB) GetWebhooks(userID string) ([]Webhook, error) {
-	rows, err := db.Query(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE user_id = ?`, userID)
+func (db *DB) GetWebhooks(ctx context.Context, userID string) ([]Webhook, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, user_id, type, secret, config, active FROM webhooks WHERE user_id = ?`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,10 +1164,10 @@ func (db *DB) GetWebhooks(userID string) ([]Webhook, error) {
 }
 
 // GetWebhookByID returns a single webhook.
-func (db *DB) GetWebhookByID(userID, id string) (*Webhook, error) {
+func (db *DB) GetWebhookByID(ctx context.Context, userID, id string) (*Webhook, error) {
 	var w Webhook
 	var config sql.NullString
-	err := db.QueryRow(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE id = ? AND user_id = ?`, id, userID).
+	err := db.QueryRowContext(ctx, `SELECT id, user_id, type, secret, config, active FROM webhooks WHERE id = ? AND user_id = ?`, id, userID).
 		Scan(&w.ID, &w.UserID, &w.Type, &w.Secret, &config, &w.Active)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -1181,10 +1182,10 @@ func (db *DB) GetWebhookByID(userID, id string) (*Webhook, error) {
 }
 
 // GetWebhookBySecret finds an active webhook by its HMAC secret.
-func (db *DB) GetWebhookBySecret(secret string) (*Webhook, error) {
+func (db *DB) GetWebhookBySecret(ctx context.Context, secret string) (*Webhook, error) {
 	var w Webhook
 	var config sql.NullString
-	err := db.QueryRow(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE secret = ? AND active = 1`, secret).
+	err := db.QueryRowContext(ctx, `SELECT id, user_id, type, secret, config, active FROM webhooks WHERE secret = ? AND active = 1`, secret).
 		Scan(&w.ID, &w.UserID, &w.Type, &w.Secret, &config, &w.Active)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -1199,8 +1200,8 @@ func (db *DB) GetWebhookBySecret(secret string) (*Webhook, error) {
 }
 
 // GetActiveWebhooksByType returns all active webhooks of a given type.
-func (db *DB) GetActiveWebhooksByType(webhookType string) ([]Webhook, error) {
-	rows, err := db.Query(`SELECT id, user_id, type, secret, config, active FROM webhooks WHERE type = ? AND active = 1`, webhookType)
+func (db *DB) GetActiveWebhooksByType(ctx context.Context, webhookType string) ([]Webhook, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, user_id, type, secret, config, active FROM webhooks WHERE type = ? AND active = 1`, webhookType)
 	if err != nil {
 		return nil, err
 	}
@@ -1225,17 +1226,17 @@ func (db *DB) GetActiveWebhooksByType(webhookType string) ([]Webhook, error) {
 }
 
 // DeleteWebhook removes a webhook.
-func (db *DB) DeleteWebhook(userID, id string) error {
-	_, err := db.Exec(`DELETE FROM webhooks WHERE id = ? AND user_id = ?`, id, userID)
+func (db *DB) DeleteWebhook(ctx context.Context, userID, id string) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = ? AND user_id = ?`, id, userID)
 	return err
 }
 
 // --- Credential CRUD ---
 
 // InsertCredential creates a new credential and returns its ID.
-func (db *DB) InsertCredential(userID string, c Credential) (string, error) {
+func (db *DB) InsertCredential(ctx context.Context, userID string, c Credential) (string, error) {
 	c.ID = uuid.New().String()
-	_, err := db.Exec(`
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO credentials (id, user_id, name, type, config, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, c.ID, userID, c.Name, c.Type, c.Config, time.Now())
@@ -1246,8 +1247,8 @@ func (db *DB) InsertCredential(userID string, c Credential) (string, error) {
 }
 
 // GetCredentials returns all credentials for a user.
-func (db *DB) GetCredentials(userID string) ([]Credential, error) {
-	rows, err := db.Query(`
+func (db *DB) GetCredentials(ctx context.Context, userID string) ([]Credential, error) {
+	rows, err := db.QueryContext(ctx, `
 		SELECT id, user_id, name, type, config, updated_at
 		FROM credentials WHERE user_id = ?
 	`, userID)
@@ -1271,8 +1272,8 @@ func (db *DB) GetCredentials(userID string) ([]Credential, error) {
 }
 
 // GetCredentialByID returns a single credential or nil if not found.
-func (db *DB) GetCredentialByID(userID, id string) (*Credential, error) {
-	row := db.QueryRow(`
+func (db *DB) GetCredentialByID(ctx context.Context, userID, id string) (*Credential, error) {
+	row := db.QueryRowContext(ctx, `
 		SELECT id, user_id, name, type, config, updated_at
 		FROM credentials WHERE id = ? AND user_id = ?
 	`, id, userID)
@@ -1288,8 +1289,8 @@ func (db *DB) GetCredentialByID(userID, id string) (*Credential, error) {
 }
 
 // UpdateCredential updates a credential's name, type, and config.
-func (db *DB) UpdateCredential(userID string, c Credential) error {
-	_, err := db.Exec(`
+func (db *DB) UpdateCredential(ctx context.Context, userID string, c Credential) error {
+	_, err := db.ExecContext(ctx, `
 		UPDATE credentials SET name = ?, type = ?, config = ?, updated_at = ?
 		WHERE id = ? AND user_id = ?
 	`, c.Name, c.Type, c.Config, time.Now(), c.ID, userID)
@@ -1298,10 +1299,10 @@ func (db *DB) UpdateCredential(userID string, c Credential) error {
 
 // DeleteCredential removes a credential. Feeds referencing it will have
 // their credential_id set to NULL by the caller.
-func (db *DB) DeleteCredential(userID, id string) error {
+func (db *DB) DeleteCredential(ctx context.Context, userID, id string) error {
 	// Clear credential_id from any feeds using this credential
-	db.Exec("UPDATE feeds SET credential_id = NULL WHERE credential_id = ? AND user_id = ?", id, userID)
-	_, err := db.Exec(`DELETE FROM credentials WHERE id = ? AND user_id = ?`, id, userID)
+	db.ExecContext(ctx, "UPDATE feeds SET credential_id = NULL WHERE credential_id = ? AND user_id = ?", id, userID)
+	_, err := db.ExecContext(ctx, `DELETE FROM credentials WHERE id = ? AND user_id = ?`, id, userID)
 	return err
 }
 
@@ -1318,17 +1319,17 @@ func scanCredential(s scanner) (*Credential, error) {
 }
 
 // UpdateUserPassword updates a user's password with a new bcrypt hash.
-func (db *DB) UpdateUserPassword(userID string, newPassword string) error {
+func (db *DB) UpdateUserPassword(ctx context.Context, userID string, newPassword string) error {
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
-	_, err = db.Exec("UPDATE users SET password_hash = ? WHERE id = ?", string(hash), userID)
+	_, err = db.ExecContext(ctx, "UPDATE users SET password_hash = ? WHERE id = ?", string(hash), userID)
 	return err
 }
 
 // DeleteUser removes a user and all their data across all tenant-scoped tables.
-func (db *DB) DeleteUser(userID string) error {
+func (db *DB) DeleteUser(ctx context.Context, userID string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -1350,8 +1351,8 @@ func (db *DB) DeleteUser(userID string) error {
 }
 
 // DeleteExpiredUnverifiedUsers removes unverified users whose verification has expired.
-func (db *DB) DeleteExpiredUnverifiedUsers() (int, error) {
-	rows, err := db.Query("SELECT id FROM users WHERE verified = 0 AND verify_expires < ?", time.Now())
+func (db *DB) DeleteExpiredUnverifiedUsers(ctx context.Context) (int, error) {
+	rows, err := db.QueryContext(ctx, "SELECT id FROM users WHERE verified = 0 AND verify_expires < ?", time.Now())
 	if err != nil {
 		return 0, err
 	}
@@ -1370,20 +1371,20 @@ func (db *DB) DeleteExpiredUnverifiedUsers() (int, error) {
 	}
 
 	for _, id := range ids {
-		db.DeleteUser(id)
+		db.DeleteUser(ctx, id)
 	}
 	return len(ids), nil
 }
 
 // SetUserVerified marks a user as verified and clears verification token fields.
-func (db *DB) SetUserVerified(userID string) error {
-	_, err := db.Exec("UPDATE users SET verified = 1, verify_token = NULL, verify_expires = NULL WHERE id = ?", userID)
+func (db *DB) SetUserVerified(ctx context.Context, userID string) error {
+	_, err := db.ExecContext(ctx, "UPDATE users SET verified = 1, verify_token = NULL, verify_expires = NULL WHERE id = ?", userID)
 	return err
 }
 
 // GetAllSettings returns all settings as a map.
-func (db *DB) GetAllSettings() (map[string]string, error) {
-	rows, err := db.Query("SELECT `key`, value FROM settings")
+func (db *DB) GetAllSettings(ctx context.Context) (map[string]string, error) {
+	rows, err := db.QueryContext(ctx, "SELECT `key`, value FROM settings")
 	if err != nil {
 		return nil, err
 	}
@@ -1403,9 +1404,9 @@ func (db *DB) GetAllSettings() (map[string]string, error) {
 }
 
 // GetSetting returns a single setting value, or empty string if not found.
-func (db *DB) GetSetting(key string) (string, error) {
+func (db *DB) GetSetting(ctx context.Context, key string) (string, error) {
 	var value string
-	err := db.QueryRow("SELECT value FROM settings WHERE `key` = ?", key).Scan(&value)
+	err := db.QueryRowContext(ctx, "SELECT value FROM settings WHERE `key` = ?", key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

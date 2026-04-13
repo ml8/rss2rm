@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -27,7 +27,7 @@ func NewAdminServer(database *db.DB, token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		defer func() {
-			log.Printf("[Admin] %s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+			slog.Info("request", "component", "admin", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start).Round(time.Millisecond))
 		}()
 
 		// Allow the admin page itself without auth
@@ -281,7 +281,7 @@ if (!AUTH_REQUIRED) {
 
 func adminListUsers(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		users, err := database.GetAllUsers()
+		users, err := database.GetAllUsers(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -318,12 +318,12 @@ func adminCreateUser(database *db.DB) http.HandlerFunc {
 			http.Error(w, "email and password required", http.StatusBadRequest)
 			return
 		}
-		id, err := database.CreateUser(req.Email, req.Password)
+		id, err := database.CreateUser(r.Context(), req.Email, req.Password)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
-		log.Printf("[Admin] User created: email=%s id=%s", req.Email, id)
+		slog.Info("user created", "component", "admin", "email", req.Email, "id", id)
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"id": id, "email": req.Email})
 	}
@@ -336,16 +336,16 @@ func adminDeleteUser(database *db.DB) http.HandlerFunc {
 			http.Error(w, "user ID required", http.StatusBadRequest)
 			return
 		}
-		user, err := database.GetUserByID(id)
+		user, err := database.GetUserByID(r.Context(), id)
 		if err != nil || user == nil {
 			http.Error(w, "user not found", http.StatusNotFound)
 			return
 		}
-		if err := database.DeleteUser(id); err != nil {
+		if err := database.DeleteUser(r.Context(), id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		log.Printf("[Admin] User deleted: email=%s id=%s", user.Email, id)
+		slog.Info("user deleted", "component", "admin", "email", user.Email, "id", id)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
@@ -357,11 +357,11 @@ func adminVerifyUser(database *db.DB) http.HandlerFunc {
 			http.Error(w, "user ID required", http.StatusBadRequest)
 			return
 		}
-		if err := database.SetUserVerified(id); err != nil {
+		if err := database.SetUserVerified(r.Context(), id); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		log.Printf("[Admin] User verified: id=%s", id)
+		slog.Info("user verified", "component", "admin", "id", id)
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]string{"status": "verified"})
 	}

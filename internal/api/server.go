@@ -12,7 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -232,7 +232,7 @@ func (s *Server) withMiddleware(next http.Handler) http.Handler {
 		if r.URL.Path != "/api/v1/poll/events" {
 			start := time.Now()
 			defer func() {
-				log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+				slog.Info("request", "method", r.Method, "path", r.URL.Path, "duration", time.Since(start).Round(time.Millisecond))
 			}()
 		}
 
@@ -246,13 +246,13 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := s.extractToken(r)
 		if token == "" {
-			log.Printf("[Auth] Unauthorized request: path=%s ip=%s", r.URL.Path, r.RemoteAddr)
+			slog.Warn("unauthorized request", "component", "auth", "path", r.URL.Path, "ip", r.RemoteAddr)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		session, err := s.db.GetSession(token)
+		session, err := s.db.GetSession(r.Context(), token)
 		if err != nil || session == nil {
-			log.Printf("[Auth] Invalid/expired token: path=%s ip=%s", r.URL.Path, r.RemoteAddr)
+			slog.Warn("invalid/expired token", "component", "auth", "path", r.URL.Path, "ip", r.RemoteAddr)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -348,7 +348,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !allowed {
-			log.Printf("[Auth] Registration rejected (not in allowlist): email=%s ip=%s", req.Email, r.RemoteAddr)
+			slog.Warn("registration rejected (not in allowlist)", "component", "auth", "email", req.Email, "ip", r.RemoteAddr)
 			http.Error(w, "registration is not available for this email", http.StatusForbidden)
 			return
 		}
@@ -356,28 +356,28 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// Create user — verified or unverified depending on config
 	if s.config.VerifyEmail && s.config.SMTP.IsConfigured() {
-		id, token, err := s.db.CreateUnverifiedUser(req.Email, req.Password, s.config.VerifyTimeout)
+		id, token, err := s.db.CreateUnverifiedUser(r.Context(), req.Email, req.Password, s.config.VerifyTimeout)
 		if err != nil {
 			if errors.Is(err, db.ErrAlreadyExists) {
-				log.Printf("[Auth] Registration failed (duplicate): email=%s ip=%s", req.Email, r.RemoteAddr)
+				slog.Error("registration failed (duplicate)", "component", "auth", "email", req.Email, "ip", r.RemoteAddr)
 				http.Error(w, "email already registered", http.StatusConflict)
 				return
 			}
-			log.Printf("[Auth] Registration failed: email=%s error=%v", req.Email, err)
+			slog.Error("registration failed", "component", "auth", "email", req.Email, "error", err)
 			http.Error(w, "registration failed", http.StatusInternalServerError)
 			return
 		}
 
 		// Send verification email
 		if err := mailer.SendVerification(s.config.SMTP, req.Email, token, s.config.BaseURL); err != nil {
-			log.Printf("[Auth] Verification email failed: email=%s error=%v", req.Email, err)
+			slog.Error("verification email failed", "component", "auth", "email", req.Email, "error", err)
 			// User was created but email failed — delete user to avoid orphan
-			s.db.DeleteUser(id)
+			s.db.DeleteUser(r.Context(), id)
 			http.Error(w, "failed to send verification email", http.StatusInternalServerError)
 			return
 		}
 
-		log.Printf("[Auth] User registered (pending verification): email=%s id=%s ip=%s", req.Email, id, r.RemoteAddr)
+		slog.Info("user registered (pending verification)", "component", "auth", "email", req.Email, "user_id", id, "ip", r.RemoteAddr)
 		w.WriteHeader(http.StatusCreated)
 		writeJSON(w, map[string]any{
 			"status":  "verification_required",
@@ -386,22 +386,22 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.db.CreateUser(req.Email, req.Password)
+	id, err := s.db.CreateUser(r.Context(), req.Email, req.Password)
 	if err != nil {
 		if errors.Is(err, db.ErrAlreadyExists) {
-			log.Printf("[Auth] Registration failed (duplicate): email=%s ip=%s", req.Email, r.RemoteAddr)
+			slog.Error("registration failed (duplicate)", "component", "auth", "email", req.Email, "ip", r.RemoteAddr)
 			http.Error(w, "email already registered", http.StatusConflict)
 			return
 		}
-		log.Printf("[Auth] Registration failed: email=%s error=%v", req.Email, err)
+		slog.Error("registration failed", "component", "auth", "email", req.Email, "error", err)
 		http.Error(w, "registration failed", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[Auth] User registered: email=%s id=%s ip=%s", req.Email, id, r.RemoteAddr)
+	slog.Info("user registered", "component", "auth", "email", req.Email, "user_id", id, "ip", r.RemoteAddr)
 
 	// Auto-login after registration
-	session, err := s.db.CreateSession(id)
+	session, err := s.db.CreateSession(r.Context(), id)
 	if err != nil {
 		w.WriteHeader(http.StatusCreated)
 		writeJSON(w, map[string]any{"status": "created", "id": id})
@@ -433,27 +433,27 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.db.GetUserByEmail(req.Email)
+	user, err := s.db.GetUserByEmail(r.Context(), req.Email)
 	if err != nil || user == nil || !db.CheckPassword(user, req.Password) {
-		log.Printf("[Auth] Login failed: email=%s ip=%s", req.Email, r.RemoteAddr)
+		slog.Warn("login failed", "component", "auth", "email", req.Email, "ip", r.RemoteAddr)
 		http.Error(w, "invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
 	// Check verification status when email verification is enabled
 	if s.config.VerifyEmail && !user.Verified {
-		log.Printf("[Auth] Login rejected (unverified): email=%s ip=%s", req.Email, r.RemoteAddr)
+		slog.Warn("login rejected (unverified)", "component", "auth", "email", req.Email, "ip", r.RemoteAddr)
 		http.Error(w, "email not verified — check your inbox for the verification link", http.StatusForbidden)
 		return
 	}
 
-	session, err := s.db.CreateSession(user.ID)
+	session, err := s.db.CreateSession(r.Context(), user.ID)
 	if err != nil {
 		http.Error(w, "failed to create session", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[Auth] Login success: email=%s user_id=%s ip=%s", req.Email, user.ID, r.RemoteAddr)
+	slog.Info("login success", "component", "auth", "email", req.Email, "user_id", user.ID, "ip", r.RemoteAddr)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
@@ -474,10 +474,10 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	token := s.extractToken(r)
 	if token != "" {
 		// Log before deleting so we can still resolve user
-		if session, _ := s.db.GetSession(token); session != nil {
-			log.Printf("[Auth] Logout: user_id=%s ip=%s", session.UserID, r.RemoteAddr)
+		if session, _ := s.db.GetSession(r.Context(), token); session != nil {
+			slog.Info("logout", "component", "auth", "user_id", session.UserID, "ip", r.RemoteAddr)
 		}
-		s.db.DeleteSession(token)
+		s.db.DeleteSession(r.Context(), token)
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session",
@@ -491,7 +491,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	userID := service.UserIDFromContext(r.Context())
-	user, err := s.db.GetUserByID(userID)
+	user, err := s.db.GetUserByID(r.Context(), userID)
 	if err != nil || user == nil {
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
@@ -509,7 +509,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := s.db.VerifyUserByToken(token)
+	userID, err := s.db.VerifyUserByToken(r.Context(), token)
 	if err != nil {
 		http.Error(w, "verification failed", http.StatusInternalServerError)
 		return
@@ -519,7 +519,7 @@ func (s *Server) handleVerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[Auth] Email verified: user_id=%s", userID)
+	slog.Info("email verified", "component", "auth", "user_id", userID)
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, `<!DOCTYPE html><html><body><h2>Email verified.</h2><p>You can now <a href="/">log in</a>.</p></body></html>`)
 }
@@ -539,23 +539,23 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := s.db.GetUserByID(userID)
+	user, err := s.db.GetUserByID(r.Context(), userID)
 	if err != nil || user == nil {
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
 	}
 	if !db.CheckPassword(user, req.CurrentPassword) {
-		log.Printf("[Auth] Password change failed (wrong current password): user_id=%s ip=%s", userID, r.RemoteAddr)
+		slog.Warn("password change failed (wrong current password)", "component", "auth", "user_id", userID, "ip", r.RemoteAddr)
 		http.Error(w, "current password is incorrect", http.StatusUnauthorized)
 		return
 	}
 
-	if err := s.db.UpdateUserPassword(userID, req.NewPassword); err != nil {
+	if err := s.db.UpdateUserPassword(r.Context(), userID, req.NewPassword); err != nil {
 		http.Error(w, "failed to update password", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[Auth] Password changed: user_id=%s ip=%s", userID, r.RemoteAddr)
+	slog.Info("password changed", "component", "auth", "user_id", userID, "ip", r.RemoteAddr)
 	w.WriteHeader(http.StatusOK)
 	writeJSON(w, map[string]string{"status": "password_changed"})
 }
@@ -1044,7 +1044,7 @@ func (s *Server) executePoll(ctx context.Context, urls []string) error {
 		s.pollMu.Unlock()
 	}()
 
-	users, err := s.db.GetAllUsers()
+	users, err := s.db.GetAllUsers(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get users: %w", err)
 	}
@@ -1054,7 +1054,7 @@ func (s *Server) executePoll(ctx context.Context, urls []string) error {
 		if err := s.svc.PollFeeds(userCtx, urls, func(e service.PollEvent) {
 			s.broker.Send(e)
 		}); err != nil {
-			log.Printf("Poll error for user %s: %v", u.Email, err)
+			slog.Error("poll error", "component", "poll", "email", u.Email, "error", err)
 		}
 	}
 
@@ -1084,7 +1084,7 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 	s.pollMu.Unlock()
 
 	go func() {
-		log.Println("Starting manual poll via API...")
+		slog.Info("starting manual poll via API", "component", "poll")
 		userCtx := context.WithValue(context.Background(), service.UserIDKey, service.UserIDFromContext(r.Context()))
 		userCtx = service.WithPollOptions(userCtx, service.PollOptions{
 			BackfillLimit: req.Backfill,
@@ -1093,7 +1093,7 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 		s.pollMu.Lock()
 		if s.pollActive {
 			s.pollMu.Unlock()
-			log.Println("Manual poll skipped: poll already in progress")
+			slog.Warn("manual poll skipped: poll already in progress", "component", "poll")
 			return
 		}
 		s.pollActive = true
@@ -1108,9 +1108,9 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 		if err := s.svc.PollFeeds(userCtx, req.URLs, func(e service.PollEvent) {
 			s.broker.Send(e)
 		}); err != nil {
-			log.Printf("Manual poll error: %v", err)
+			slog.Error("manual poll error", "component", "poll", "error", err)
 		} else {
-			log.Println("Manual poll complete")
+			slog.Info("manual poll complete", "component", "poll")
 		}
 		s.broker.Send(service.PollEvent{Type: service.EventPollComplete, Message: "All feeds processed"})
 	}()
@@ -1150,10 +1150,10 @@ func (s *Server) handlePollEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startBackgroundPoller() {
-	log.Printf("Background polling enabled (interval: %v)", s.config.PollInterval)
+	slog.Info("background polling enabled", "component", "poll", "interval", s.config.PollInterval)
 
 	// Initial delay
-	log.Println("Waiting 20s before initial poll...")
+	slog.Info("waiting 20s before initial poll", "component", "poll")
 	time.Sleep(20 * time.Second)
 
 	// Run initial poll
@@ -1161,7 +1161,7 @@ func (s *Server) startBackgroundPoller() {
 	s.checkDigests()
 
 	for {
-		log.Printf("Next poll in %v", s.config.PollInterval)
+		slog.Info("next poll scheduled", "component", "poll", "interval", s.config.PollInterval)
 		time.Sleep(s.config.PollInterval)
 		s.runBackgroundPoll()
 		s.checkDigests()
@@ -1169,15 +1169,15 @@ func (s *Server) startBackgroundPoller() {
 }
 
 func (s *Server) runBackgroundPoll() {
-	log.Println("Starting background poll...")
+	slog.Info("starting background poll", "component", "poll")
 	if err := s.executePoll(context.Background(), nil); err != nil {
 		if errors.Is(err, errPollInProgress) {
-			log.Println("Background poll skipped: poll already in progress")
+			slog.Warn("background poll skipped: poll already in progress", "component", "poll")
 		} else {
-			log.Printf("Background poll error: %v", err)
+			slog.Error("background poll error", "component", "poll", "error", err)
 		}
 	} else {
-		log.Println("Background poll complete")
+		slog.Info("background poll complete", "component", "poll")
 	}
 }
 
@@ -1185,8 +1185,8 @@ func (s *Server) runBackgroundPoll() {
 func (s *Server) cleanExpiredSessions() {
 	for {
 		time.Sleep(1 * time.Hour)
-		if err := s.db.CleanExpiredSessions(); err != nil {
-			log.Printf("Failed to clean expired sessions: %v", err)
+		if err := s.db.CleanExpiredSessions(context.Background()); err != nil {
+			slog.Error("failed to clean expired sessions", "component", "server", "error", err)
 		}
 	}
 }
@@ -1195,20 +1195,20 @@ func (s *Server) cleanExpiredSessions() {
 func (s *Server) cleanUnverifiedUsers() {
 	for {
 		time.Sleep(1 * time.Hour)
-		deleted, err := s.db.DeleteExpiredUnverifiedUsers()
+		deleted, err := s.db.DeleteExpiredUnverifiedUsers(context.Background())
 		if err != nil {
-			log.Printf("[Auth] Failed to clean unverified users: %v", err)
+			slog.Error("failed to clean unverified users", "component", "auth", "error", err)
 		} else if deleted > 0 {
-			log.Printf("[Auth] Cleaned %d expired unverified accounts", deleted)
+			slog.Info("cleaned expired unverified accounts", "component", "auth", "count", deleted)
 		}
 	}
 }
 
 // checkDigests generates any digests that are due based on their schedule.
 func (s *Server) checkDigests() {
-	users, err := s.db.GetAllUsers()
+	users, err := s.db.GetAllUsers(context.Background())
 	if err != nil {
-		log.Printf("Failed to get users for digest check: %v", err)
+		slog.Error("failed to get users for digest check", "component", "digest", "error", err)
 		return
 	}
 
@@ -1217,21 +1217,21 @@ func (s *Server) checkDigests() {
 		ctx := context.WithValue(context.Background(), service.UserIDKey, u.ID)
 		digests, err := s.svc.ListDigests(ctx)
 		if err != nil {
-			log.Printf("Failed to list digests for user %s: %v", u.Email, err)
+			slog.Error("failed to list digests", "component", "digest", "email", u.Email, "error", err)
 			continue
 		}
 		for _, d := range digests {
 			if !d.Active || !isDigestDue(d, now) {
 				continue
 			}
-			log.Printf("[Digest] Generating scheduled digest %q for user %s", d.Name, u.Email)
+			slog.Info("generating scheduled digest", "component", "digest", "name", d.Name, "email", u.Email)
 			err := s.svc.GenerateDigest(ctx, d.ID, func(e service.PollEvent) {
 				s.broker.Send(e)
 			})
 			if err != nil {
-				log.Printf("[Digest] Generation failed for %q: %v", d.Name, err)
+				slog.Error("digest generation failed", "component", "digest", "name", d.Name, "error", err)
 			} else {
-				log.Printf("[Digest] Generation complete for %q", d.Name)
+				slog.Info("digest generation complete", "component", "digest", "name", d.Name)
 			}
 		}
 	}
@@ -1248,7 +1248,7 @@ func isDigestDue(d db.Digest, now time.Time) bool {
 
 	schedHour, schedMin, err := parseSchedule(d.Schedule)
 	if err != nil {
-		log.Printf("[Digest] Invalid schedule '%s' for digest '%s': %v", d.Schedule, d.Name, err)
+		slog.Warn("invalid schedule", "component", "digest", "schedule", d.Schedule, "name", d.Name, "error", err)
 		return false
 	}
 
@@ -1563,7 +1563,7 @@ func (s *Server) handleIngestArticle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.svc.DeliverArticle(r.Context(), req.Title, req.URL, req.Content, req.DestinationID, req.Directory, req.DigestID); err != nil {
-		log.Printf("[Ingest] Failed: %v", err)
+		slog.Error("ingest failed", "component", "ingest", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1759,15 +1759,15 @@ func (s *Server) handleMinifluxWebhook(w http.ResponseWriter, r *http.Request) {
 
 	signature := r.Header.Get("X-Miniflux-Signature")
 	if signature == "" {
-		log.Printf("[Webhook] Rejected: missing X-Miniflux-Signature header")
+		slog.Warn("rejected: missing X-Miniflux-Signature header", "component", "webhook")
 		http.Error(w, "missing X-Miniflux-Signature header", http.StatusUnauthorized)
 		return
 	}
 
 	// Find the webhook by validating the HMAC against all active miniflux webhooks
-	webhook, err := s.findWebhookBySignature(body, signature)
+	webhook, err := s.findWebhookBySignature(r.Context(), body, signature)
 	if err != nil || webhook == nil {
-		log.Printf("[Webhook] Rejected: HMAC signature mismatch (sig=%s, err=%v, bodyLen=%d)", signature[:16], err, len(body))
+		slog.Warn("HMAC signature mismatch", "component", "webhook", "signature", signature[:16], "error", err, "body_len", len(body))
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -1804,12 +1804,12 @@ func (s *Server) handleMinifluxWebhook(w http.ResponseWriter, r *http.Request) {
 	// Deliver as the webhook's user
 	ctx := context.WithValue(r.Context(), service.UserIDKey, webhook.UserID)
 	if err := s.svc.DeliverArticle(ctx, payload.Entry.Title, payload.Entry.URL, payload.Entry.Content, config.DestinationID, config.Directory, config.DigestID); err != nil {
-		log.Printf("[Webhook] Miniflux delivery failed: %v", err)
+		slog.Error("miniflux delivery failed", "component", "webhook", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[Webhook] Miniflux: delivered %q for user %s", payload.Entry.Title, webhook.UserID)
+	slog.Info("miniflux delivered", "component", "webhook", "title", payload.Entry.Title, "user_id", webhook.UserID)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1817,25 +1817,25 @@ func (s *Server) handleMinifluxWebhook(w http.ResponseWriter, r *http.Request) {
 // active miniflux webhooks. Returns the matching webhook or nil.
 // Uses s.db directly because this runs on the unauthenticated webhook
 // path — there is no user context. The query is cross-tenant by design.
-func (s *Server) findWebhookBySignature(body []byte, signature string) (*db.Webhook, error) {
+func (s *Server) findWebhookBySignature(ctx context.Context, body []byte, signature string) (*db.Webhook, error) {
 	sigBytes, err := hex.DecodeString(signature)
 	if err != nil {
 		return nil, fmt.Errorf("invalid signature encoding")
 	}
 
-	webhooks, err := s.db.GetActiveWebhooksByType("miniflux")
+	webhooks, err := s.db.GetActiveWebhooksByType(ctx, "miniflux")
 	if err != nil {
 		return nil, err
 	}
 
-	log.Printf("[Webhook] Checking signature against %d active webhook(s)", len(webhooks))
+	slog.Info("checking signature", "component", "webhook", "webhook_count", len(webhooks))
 
 	for _, w := range webhooks {
 		mac := hmac.New(sha256.New, []byte(w.Secret))
 		mac.Write(body)
 		expected := mac.Sum(nil)
 		expectedHex := hex.EncodeToString(expected)
-		log.Printf("[Webhook] Comparing: got=%s expected=%s (secret=%s...)", signature[:16], expectedHex[:16], w.Secret[:8])
+		slog.Info("comparing signature", "component", "webhook", "got", signature[:16], "expected", expectedHex[:16], "secret", w.Secret[:8])
 		if hmac.Equal(expected, sigBytes) {
 			return &w, nil
 		}

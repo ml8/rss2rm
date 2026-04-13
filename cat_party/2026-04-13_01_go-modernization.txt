@@ -1,0 +1,39 @@
+
+    /\_/\     STRUCTURED LOGS & CONTEXT     /\_/\
+   ( o.o )    ~~~~~~~~~~~~~~~~~~~~~~~~     ( ^.^ )
+    > ^ <     124 log calls → slog          > ^ <
+   /|   |\    69 DB methods got ctx         /|   |\
+  (_|   |_)   All tests still purring!     (_|   |_)
+
+        /\_____/\
+       /  o   o  \       "We used to just log.Printf
+      ( ==  ^  == )        Now we slog.Info with flair
+       )         (         Context flows from top to tail
+      (           )        Through every method, every layer"
+     ( (  )   (  ) )
+    (__(__)___(__)__)
+
+   ~~~~ WHAT CHANGED ~~~~
+
+   Refactor 1: log → log/slog
+   ┌─────────────────────────────┐
+   │ 6 files, 124 call sites     │
+   │ Structured attrs everywhere │
+   │ [Section] → "component"     │
+   │ Error / Info / Warn levels  │
+   └─────────────────────────────┘
+
+   Refactor 2: context.Context
+   ┌─────────────────────────────┐
+   │ 69 DB methods: ExecContext  │
+   │ Fetcher, Processor, Import  │
+   │ Converter gets caller ctx   │
+   │ No more context.TODO()      │
+   └─────────────────────────────┘
+
+      /\_/\    Go 1.26 modern!    /\_/\
+     ( =^.^)  ~~~~~~~~~~~~~~~~  (^.^= )
+      )   (   Build: OK           )   (
+     (__ __)  Tests: PASS        (__ __)
+              Vet:   CLEAN
+

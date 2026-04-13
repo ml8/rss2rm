@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -27,10 +28,11 @@ func setupTestDB(t *testing.T) *DB {
 
 func TestDigestCRUD(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
 	// Insert
 	d := Digest{Name: "Morning Reading", Schedule: "07:00", Active: true}
-	id, err := db.InsertDigest(testUserID, d)
+	id, err := db.InsertDigest(ctx, testUserID, d)
 	if err != nil {
 		t.Fatalf("InsertDigest: %v", err)
 	}
@@ -39,7 +41,7 @@ func TestDigestCRUD(t *testing.T) {
 	}
 
 	// Get by ID
-	got, err := db.GetDigestByID(testUserID, id)
+	got, err := db.GetDigestByID(ctx, testUserID, id)
 	if err != nil {
 		t.Fatalf("GetDigestByID: %v", err)
 	}
@@ -54,7 +56,7 @@ func TestDigestCRUD(t *testing.T) {
 	}
 
 	// List
-	digests, err := db.GetDigests(testUserID)
+	digests, err := db.GetDigests(ctx, testUserID)
 	if err != nil {
 		t.Fatalf("GetDigests: %v", err)
 	}
@@ -63,7 +65,7 @@ func TestDigestCRUD(t *testing.T) {
 	}
 
 	// Active digests
-	active, err := db.GetActiveDigests(testUserID)
+	active, err := db.GetActiveDigests(ctx, testUserID)
 	if err != nil {
 		t.Fatalf("GetActiveDigests: %v", err)
 	}
@@ -72,10 +74,10 @@ func TestDigestCRUD(t *testing.T) {
 	}
 
 	// Remove
-	if err := db.RemoveDigest(testUserID, id); err != nil {
+	if err := db.RemoveDigest(ctx, testUserID, id); err != nil {
 		t.Fatalf("RemoveDigest: %v", err)
 	}
-	got, err = db.GetDigestByID(testUserID, id)
+	got, err = db.GetDigestByID(ctx, testUserID, id)
 	if err != nil {
 		t.Fatalf("GetDigestByID after remove: %v", err)
 	}
@@ -86,20 +88,21 @@ func TestDigestCRUD(t *testing.T) {
 
 func TestDigestWithDestination(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
 	// Create a destination first
-	destID, err := db.InsertDestination(testUserID, Destination{Name: "test-dest", Type: "file", Config: `{"path":"/tmp"}`, IsDefault: false})
+	destID, err := db.InsertDestination(ctx, testUserID, Destination{Name: "test-dest", Type: "file", Config: `{"path":"/tmp"}`, IsDefault: false})
 	if err != nil {
 		t.Fatalf("InsertDestination: %v", err)
 	}
 
 	d := Digest{Name: "With Dest", Schedule: "08:00", DestinationID: &destID, Active: true}
-	id, err := db.InsertDigest(testUserID, d)
+	id, err := db.InsertDigest(ctx, testUserID, d)
 	if err != nil {
 		t.Fatalf("InsertDigest: %v", err)
 	}
 
-	got, err := db.GetDigestByID(testUserID, id)
+	got, err := db.GetDigestByID(ctx, testUserID, id)
 	if err != nil {
 		t.Fatalf("GetDigestByID: %v", err)
 	}
@@ -110,9 +113,10 @@ func TestDigestWithDestination(t *testing.T) {
 
 func TestFeedDigestColumns(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
 	// Create a feed (no Directory/DigestID on Feed anymore)
-	feedID, err := db.InsertFeed(testUserID, Feed{
+	feedID, err := db.InsertFeed(ctx, testUserID, Feed{
 		URL: "https://example.com/feed", Name: "Test Feed", Active: true, Backfill: 5,
 	})
 	if err != nil {
@@ -120,10 +124,10 @@ func TestFeedDigestColumns(t *testing.T) {
 	}
 
 	// Create a FeedDelivery for it
-	if err := db.SetFeedDelivery(testUserID, FeedDelivery{FeedID: feedID, Directory: "test"}); err != nil {
+	if err := db.SetFeedDelivery(ctx, testUserID, FeedDelivery{FeedID: feedID, Directory: "test"}); err != nil {
 		t.Fatalf("SetFeedDelivery: %v", err)
 	}
-	fd, err := db.GetFeedDelivery(testUserID, feedID)
+	fd, err := db.GetFeedDelivery(ctx, testUserID, feedID)
 	if err != nil {
 		t.Fatalf("GetFeedDelivery: %v", err)
 	}
@@ -132,16 +136,16 @@ func TestFeedDigestColumns(t *testing.T) {
 	}
 
 	// Create a digest and add feed to it
-	digestID, err := db.InsertDigest(testUserID, Digest{Name: "Test Digest", Schedule: "07:00", Active: true})
+	digestID, err := db.InsertDigest(ctx, testUserID, Digest{Name: "Test Digest", Schedule: "07:00", Active: true})
 	if err != nil {
 		t.Fatalf("InsertDigest: %v", err)
 	}
-	if err := db.AddFeedToDigest(digestID, feedID); err != nil {
+	if err := db.AddFeedToDigest(ctx, digestID, feedID); err != nil {
 		t.Fatalf("AddFeedToDigest: %v", err)
 	}
 
 	// Verify GetFeedsForDigest
-	digestFeeds, err := db.GetFeedsForDigest(testUserID, digestID)
+	digestFeeds, err := db.GetFeedsForDigest(ctx, testUserID, digestID)
 	if err != nil {
 		t.Fatalf("GetFeedsForDigest: %v", err)
 	}
@@ -150,7 +154,7 @@ func TestFeedDigestColumns(t *testing.T) {
 	}
 
 	// Verify GetDigestsForFeed
-	digests, err := db.GetDigestsForFeed(testUserID, feedID)
+	digests, err := db.GetDigestsForFeed(ctx, testUserID, feedID)
 	if err != nil {
 		t.Fatalf("GetDigestsForFeed: %v", err)
 	}
@@ -159,27 +163,27 @@ func TestFeedDigestColumns(t *testing.T) {
 	}
 
 	// RemoveFeedFromDigest
-	if err := db.RemoveFeedFromDigest(digestID, feedID); err != nil {
+	if err := db.RemoveFeedFromDigest(ctx, digestID, feedID); err != nil {
 		t.Fatalf("RemoveFeedFromDigest: %v", err)
 	}
-	digestFeeds, _ = db.GetFeedsForDigest(testUserID, digestID)
+	digestFeeds, _ = db.GetFeedsForDigest(ctx, testUserID, digestID)
 	if len(digestFeeds) != 0 {
 		t.Fatalf("expected 0 feeds after remove, got %d", len(digestFeeds))
 	}
 
 	// RemoveFeedDelivery
-	if err := db.RemoveFeedDelivery(testUserID, feedID); err != nil {
+	if err := db.RemoveFeedDelivery(ctx, testUserID, feedID); err != nil {
 		t.Fatalf("RemoveFeedDelivery: %v", err)
 	}
-	fd, _ = db.GetFeedDelivery(testUserID, feedID)
+	fd, _ = db.GetFeedDelivery(ctx, testUserID, feedID)
 	if fd != nil {
 		t.Fatal("expected nil FeedDelivery after remove")
 	}
 
 	// Re-add feed to digest, then RemoveDigest should also remove from digest_feeds
-	db.AddFeedToDigest(digestID, feedID)
-	db.RemoveDigest(testUserID, digestID)
-	digests, _ = db.GetDigestsForFeed(testUserID, feedID)
+	db.AddFeedToDigest(ctx, digestID, feedID)
+	db.RemoveDigest(ctx, testUserID, digestID)
+	digests, _ = db.GetDigestsForFeed(ctx, testUserID, feedID)
 	if len(digests) != 0 {
 		t.Fatal("expected no digests for feed after digest removal")
 	}
@@ -187,8 +191,9 @@ func TestFeedDigestColumns(t *testing.T) {
 
 func TestHasEntryAndRendered(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	feedID, err := db.InsertFeed(testUserID, Feed{
+	feedID, err := db.InsertFeed(ctx, testUserID, Feed{
 		URL: "https://example.com/feed", Name: "Test",
 		Active: true, Backfill: 5,
 	})
@@ -197,7 +202,7 @@ func TestHasEntryAndRendered(t *testing.T) {
 	}
 
 	// No entry yet
-	has, err := db.HasEntry(testUserID, feedID, "guid-1")
+	has, err := db.HasEntry(ctx, testUserID, feedID, "guid-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +211,7 @@ func TestHasEntryAndRendered(t *testing.T) {
 	}
 
 	// Create entry (no Uploaded field)
-	err = db.CreateEntry(testUserID, Entry{
+	err = db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID, EntryID: "guid-1", Title: "Article 1",
 		URL: "https://example.com/1", Published: time.Now(),
 	})
@@ -215,7 +220,7 @@ func TestHasEntryAndRendered(t *testing.T) {
 	}
 
 	// HasEntry should be true now
-	has, err = db.HasEntry(testUserID, feedID, "guid-1")
+	has, err = db.HasEntry(ctx, testUserID, feedID, "guid-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +229,7 @@ func TestHasEntryAndRendered(t *testing.T) {
 	}
 
 	// GetEntry should have empty Rendered
-	e, err := db.GetEntry(testUserID, feedID, "guid-1")
+	e, err := db.GetEntry(ctx, testUserID, feedID, "guid-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,10 +241,10 @@ func TestHasEntryAndRendered(t *testing.T) {
 	}
 
 	// UpdateEntryRendered
-	if err := db.UpdateEntryRendered(e.ID, "/tmp/article.pdf"); err != nil {
+	if err := db.UpdateEntryRendered(ctx, e.ID, "/tmp/article.pdf"); err != nil {
 		t.Fatal(err)
 	}
-	e, _ = db.GetEntry(testUserID, feedID, "guid-1")
+	e, _ = db.GetEntry(ctx, testUserID, feedID, "guid-1")
 	if e.Rendered != "/tmp/article.pdf" {
 		t.Fatalf("expected Rendered=/tmp/article.pdf, got %q", e.Rendered)
 	}
@@ -247,43 +252,44 @@ func TestHasEntryAndRendered(t *testing.T) {
 
 func TestGetNewEntriesForDigest(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	digestID, _ := db.InsertDigest(testUserID, Digest{Name: "Test Digest", Schedule: "07:00", Active: true})
-	feedID, _ := db.InsertFeed(testUserID, Feed{
+	digestID, _ := db.InsertDigest(ctx, testUserID, Digest{Name: "Test Digest", Schedule: "07:00", Active: true})
+	feedID, _ := db.InsertFeed(ctx, testUserID, Feed{
 		URL: "https://example.com/feed", Name: "Test",
 		Active: true, Backfill: 5,
 	})
-	db.AddFeedToDigest(digestID, feedID)
+	db.AddFeedToDigest(ctx, digestID, feedID)
 
 	// A feed NOT in the digest
-	feedID2, _ := db.InsertFeed(testUserID, Feed{
+	feedID2, _ := db.InsertFeed(ctx, testUserID, Feed{
 		URL: "https://example.com/other", Name: "Other",
 		Active: true, Backfill: 5,
 	})
 
 	now := time.Now()
 
-	db.CreateEntry(testUserID, Entry{
+	db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID, EntryID: "entry-1", Title: "First",
 		URL: "https://example.com/1", Published: now.Add(-2 * time.Hour),
 	})
-	db.CreateEntry(testUserID, Entry{
+	db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID, EntryID: "entry-2", Title: "Second",
 		URL: "https://example.com/2", Published: now.Add(-1 * time.Hour),
 	})
-	db.CreateEntry(testUserID, Entry{
+	db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID, EntryID: "entry-3", Title: "Third",
 		URL: "https://example.com/3", Published: now,
 	})
 
 	// Article from non-digest feed (should not appear)
-	db.CreateEntry(testUserID, Entry{
+	db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID2, EntryID: "other-1", Title: "Other Feed",
 		URL: "https://example.com/other1", Published: now,
 	})
 
 	// lastDeliveredID=0 should return all entries for the digest
-	entries, err := db.GetNewEntriesForDigest(digestID, 0)
+	entries, err := db.GetNewEntriesForDigest(ctx, digestID, 0)
 	if err != nil {
 		t.Fatalf("GetNewEntriesForDigest: %v", err)
 	}
@@ -296,7 +302,7 @@ func TestGetNewEntriesForDigest(t *testing.T) {
 
 	// Use the ID of the first entry as cursor — should return only entries after it
 	cursor := entries[0].ID
-	entries, err = db.GetNewEntriesForDigest(digestID, cursor)
+	entries, err = db.GetNewEntriesForDigest(ctx, digestID, cursor)
 	if err != nil {
 		t.Fatalf("GetNewEntriesForDigest with cursor: %v", err)
 	}
@@ -310,11 +316,12 @@ func TestGetNewEntriesForDigest(t *testing.T) {
 
 func TestMarkDigestGenerated(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	id, _ := db.InsertDigest(testUserID, Digest{Name: "Test", Schedule: "07:00", Active: true})
+	id, _ := db.InsertDigest(ctx, testUserID, Digest{Name: "Test", Schedule: "07:00", Active: true})
 
 	// Initially no last_generated and last_delivered_id=0
-	d, _ := db.GetDigestByID(testUserID, id)
+	d, _ := db.GetDigestByID(ctx, testUserID, id)
 	if !d.LastGenerated.IsZero() {
 		t.Fatal("expected zero LastGenerated initially")
 	}
@@ -323,11 +330,11 @@ func TestMarkDigestGenerated(t *testing.T) {
 	}
 
 	// Mark generated with a specific lastEntryID
-	if err := db.MarkDigestGenerated(id, 42); err != nil {
+	if err := db.MarkDigestGenerated(ctx, id, 42); err != nil {
 		t.Fatal(err)
 	}
 
-	d, _ = db.GetDigestByID(testUserID, id)
+	d, _ = db.GetDigestByID(ctx, testUserID, id)
 	if d.LastGenerated.IsZero() {
 		t.Fatal("expected non-zero LastGenerated after marking")
 	}
@@ -338,12 +345,13 @@ func TestMarkDigestGenerated(t *testing.T) {
 
 func TestFeedDeliveryCRUD(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	feedID, _ := db.InsertFeed(testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true, Backfill: 5})
-	destID, _ := db.InsertDestination(testUserID, Destination{Name: "test-dest", Type: "file", Config: `{"path":"/tmp"}`})
+	feedID, _ := db.InsertFeed(ctx, testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true, Backfill: 5})
+	destID, _ := db.InsertDestination(ctx, testUserID, Destination{Name: "test-dest", Type: "file", Config: `{"path":"/tmp"}`})
 
 	// Initially no delivery
-	fd, err := db.GetFeedDelivery(testUserID, feedID)
+	fd, err := db.GetFeedDelivery(ctx, testUserID, feedID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -352,10 +360,10 @@ func TestFeedDeliveryCRUD(t *testing.T) {
 	}
 
 	// SetFeedDelivery
-	if err := db.SetFeedDelivery(testUserID, FeedDelivery{FeedID: feedID, Directory: "articles", DestinationID: &destID}); err != nil {
+	if err := db.SetFeedDelivery(ctx, testUserID, FeedDelivery{FeedID: feedID, Directory: "articles", DestinationID: &destID}); err != nil {
 		t.Fatal(err)
 	}
-	fd, _ = db.GetFeedDelivery(testUserID, feedID)
+	fd, _ = db.GetFeedDelivery(ctx, testUserID, feedID)
 	if fd == nil {
 		t.Fatal("expected FeedDelivery after set")
 	}
@@ -370,28 +378,28 @@ func TestFeedDeliveryCRUD(t *testing.T) {
 	}
 
 	// AdvanceFeedDelivery
-	if err := db.AdvanceFeedDelivery(feedID, 10); err != nil {
+	if err := db.AdvanceFeedDelivery(ctx, feedID, 10); err != nil {
 		t.Fatal(err)
 	}
-	fd, _ = db.GetFeedDelivery(testUserID, feedID)
+	fd, _ = db.GetFeedDelivery(ctx, testUserID, feedID)
 	if fd.LastDeliveredID != 10 {
 		t.Fatalf("expected LastDeliveredID=10, got %d", fd.LastDeliveredID)
 	}
 
 	// Upsert via SetFeedDelivery (should replace)
-	if err := db.SetFeedDelivery(testUserID, FeedDelivery{FeedID: feedID, Directory: "new-dir"}); err != nil {
+	if err := db.SetFeedDelivery(ctx, testUserID, FeedDelivery{FeedID: feedID, Directory: "new-dir"}); err != nil {
 		t.Fatal(err)
 	}
-	fd, _ = db.GetFeedDelivery(testUserID, feedID)
+	fd, _ = db.GetFeedDelivery(ctx, testUserID, feedID)
 	if fd.Directory != "new-dir" {
 		t.Fatalf("expected directory=new-dir after upsert, got %q", fd.Directory)
 	}
 
 	// RemoveFeedDelivery
-	if err := db.RemoveFeedDelivery(testUserID, feedID); err != nil {
+	if err := db.RemoveFeedDelivery(ctx, testUserID, feedID); err != nil {
 		t.Fatal(err)
 	}
-	fd, _ = db.GetFeedDelivery(testUserID, feedID)
+	fd, _ = db.GetFeedDelivery(ctx, testUserID, feedID)
 	if fd != nil {
 		t.Fatal("expected nil after RemoveFeedDelivery")
 	}
@@ -399,16 +407,17 @@ func TestFeedDeliveryCRUD(t *testing.T) {
 
 func TestGetUndeliveredEntries(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	feedID, _ := db.InsertFeed(testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true, Backfill: 5})
+	feedID, _ := db.InsertFeed(ctx, testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true, Backfill: 5})
 
 	now := time.Now()
-	db.CreateEntry(testUserID, Entry{FeedID: feedID, EntryID: "a", Title: "A", URL: "https://example.com/a", Published: now.Add(-2 * time.Hour)})
-	db.CreateEntry(testUserID, Entry{FeedID: feedID, EntryID: "b", Title: "B", URL: "https://example.com/b", Published: now.Add(-1 * time.Hour)})
-	db.CreateEntry(testUserID, Entry{FeedID: feedID, EntryID: "c", Title: "C", URL: "https://example.com/c", Published: now})
+	db.CreateEntry(ctx, testUserID, Entry{FeedID: feedID, EntryID: "a", Title: "A", URL: "https://example.com/a", Published: now.Add(-2 * time.Hour)})
+	db.CreateEntry(ctx, testUserID, Entry{FeedID: feedID, EntryID: "b", Title: "B", URL: "https://example.com/b", Published: now.Add(-1 * time.Hour)})
+	db.CreateEntry(ctx, testUserID, Entry{FeedID: feedID, EntryID: "c", Title: "C", URL: "https://example.com/c", Published: now})
 
 	// All entries with lastDeliveredID=0
-	entries, err := db.GetUndeliveredEntries(feedID, 0)
+	entries, err := db.GetUndeliveredEntries(ctx, feedID, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +427,7 @@ func TestGetUndeliveredEntries(t *testing.T) {
 
 	// Use first entry's ID as cursor
 	cursor := entries[0].ID
-	entries, _ = db.GetUndeliveredEntries(feedID, cursor)
+	entries, _ = db.GetUndeliveredEntries(ctx, feedID, cursor)
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries after cursor, got %d", len(entries))
 	}
@@ -428,7 +437,7 @@ func TestGetUndeliveredEntries(t *testing.T) {
 
 	// Use last entry's ID as cursor — should return nothing
 	cursor = entries[1].ID
-	entries, _ = db.GetUndeliveredEntries(feedID, cursor)
+	entries, _ = db.GetUndeliveredEntries(ctx, feedID, cursor)
 	if len(entries) != 0 {
 		t.Fatalf("expected 0 entries after last cursor, got %d", len(entries))
 	}
@@ -436,16 +445,17 @@ func TestGetUndeliveredEntries(t *testing.T) {
 
 func TestDigestFeedsManyToMany(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	feedID, _ := db.InsertFeed(testUserID, Feed{URL: "https://example.com/feed", Name: "Shared Feed", Active: true, Backfill: 5})
-	d1, _ := db.InsertDigest(testUserID, Digest{Name: "Morning", Schedule: "07:00", Active: true})
-	d2, _ := db.InsertDigest(testUserID, Digest{Name: "Evening", Schedule: "19:00", Active: true})
+	feedID, _ := db.InsertFeed(ctx, testUserID, Feed{URL: "https://example.com/feed", Name: "Shared Feed", Active: true, Backfill: 5})
+	d1, _ := db.InsertDigest(ctx, testUserID, Digest{Name: "Morning", Schedule: "07:00", Active: true})
+	d2, _ := db.InsertDigest(ctx, testUserID, Digest{Name: "Evening", Schedule: "19:00", Active: true})
 
-	db.AddFeedToDigest(d1, feedID)
-	db.AddFeedToDigest(d2, feedID)
+	db.AddFeedToDigest(ctx, d1, feedID)
+	db.AddFeedToDigest(ctx, d2, feedID)
 
 	// Feed should be in both digests
-	digests, err := db.GetDigestsForFeed(testUserID, feedID)
+	digests, err := db.GetDigestsForFeed(ctx, testUserID, feedID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,26 +464,26 @@ func TestDigestFeedsManyToMany(t *testing.T) {
 	}
 
 	// Both digests should list the feed
-	f1, _ := db.GetFeedsForDigest(testUserID, d1)
-	f2, _ := db.GetFeedsForDigest(testUserID, d2)
+	f1, _ := db.GetFeedsForDigest(ctx, testUserID, d1)
+	f2, _ := db.GetFeedsForDigest(ctx, testUserID, d2)
 	if len(f1) != 1 || len(f2) != 1 {
 		t.Fatalf("expected 1 feed in each digest, got %d and %d", len(f1), len(f2))
 	}
 
 	// Remove from one digest — should remain in the other
-	db.RemoveFeedFromDigest(d1, feedID)
-	digests, _ = db.GetDigestsForFeed(testUserID, feedID)
+	db.RemoveFeedFromDigest(ctx, d1, feedID)
+	digests, _ = db.GetDigestsForFeed(ctx, testUserID, feedID)
 	if len(digests) != 1 || digests[0].ID != d2 {
 		t.Fatalf("expected feed in 1 digest after removal, got %d", len(digests))
 	}
 
 	// Add an entry and verify it appears in the remaining digest's new entries
-	db.CreateEntry(testUserID, Entry{FeedID: feedID, EntryID: "x", Title: "X", URL: "https://example.com/x", Published: time.Now()})
-	entries, _ := db.GetNewEntriesForDigest(d2, 0)
+	db.CreateEntry(ctx, testUserID, Entry{FeedID: feedID, EntryID: "x", Title: "X", URL: "https://example.com/x", Published: time.Now()})
+	entries, _ := db.GetNewEntriesForDigest(ctx, d2, 0)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry in digest d2, got %d", len(entries))
 	}
-	entries, _ = db.GetNewEntriesForDigest(d1, 0)
+	entries, _ = db.GetNewEntriesForDigest(ctx, d1, 0)
 	if len(entries) != 0 {
 		t.Fatalf("expected 0 entries in digest d1 after feed removed, got %d", len(entries))
 	}
@@ -481,32 +491,33 @@ func TestDigestFeedsManyToMany(t *testing.T) {
 
 func TestEntryContent(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
-	feedID, _ := db.InsertFeed(testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true})
+	feedID, _ := db.InsertFeed(ctx, testUserID, Feed{URL: "https://example.com/feed", Name: "Test", Active: true})
 
 	// Entry without content
-	db.CreateEntry(testUserID, Entry{
+	db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID, EntryID: "no-content", Title: "No Content",
 		URL: "https://example.com/1", Published: time.Now(),
 	})
-	e, _ := db.GetEntry(testUserID, feedID, "no-content")
+	e, _ := db.GetEntry(ctx, testUserID, feedID, "no-content")
 	if e.Content != "" {
 		t.Fatalf("expected empty Content, got %q", e.Content)
 	}
 
 	// Entry with content
-	db.CreateEntry(testUserID, Entry{
+	db.CreateEntry(ctx, testUserID, Entry{
 		FeedID: feedID, EntryID: "with-content", Title: "With Content",
 		URL: "https://example.com/2", Published: time.Now(),
 		Content: "<p>Hello world</p>",
 	})
-	e, _ = db.GetEntry(testUserID, feedID, "with-content")
+	e, _ = db.GetEntry(ctx, testUserID, feedID, "with-content")
 	if e.Content != "<p>Hello world</p>" {
 		t.Fatalf("expected content '<p>Hello world</p>', got %q", e.Content)
 	}
 
 	// Content should appear in GetUndeliveredEntries
-	entries, _ := db.GetUndeliveredEntries(feedID, 0)
+	entries, _ := db.GetUndeliveredEntries(ctx, feedID, 0)
 	found := false
 	for _, entry := range entries {
 		if entry.EntryID == "with-content" && entry.Content == "<p>Hello world</p>" {
@@ -518,9 +529,9 @@ func TestEntryContent(t *testing.T) {
 	}
 
 	// Content should appear in GetNewEntriesForDigest
-	digestID, _ := db.InsertDigest(testUserID, Digest{Name: "Content Digest", Schedule: "07:00", Active: true})
-	db.AddFeedToDigest(digestID, feedID)
-	digestEntries, _ := db.GetNewEntriesForDigest(digestID, 0)
+	digestID, _ := db.InsertDigest(ctx, testUserID, Digest{Name: "Content Digest", Schedule: "07:00", Active: true})
+	db.AddFeedToDigest(ctx, digestID, feedID)
+	digestEntries, _ := db.GetNewEntriesForDigest(ctx, digestID, 0)
 	found = false
 	for _, entry := range digestEntries {
 		if entry.EntryID == "with-content" && entry.Content == "<p>Hello world</p>" {
@@ -534,15 +545,16 @@ func TestEntryContent(t *testing.T) {
 
 func TestWebhookCRUD(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
 	// Create a user for webhook ownership
-	userID, err := db.CreateUser("webhook@test.com", "password")
+	userID, err := db.CreateUser(ctx, "webhook@test.com", "password")
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
 	// Insert webhook
-	id, err := db.InsertWebhook(userID, Webhook{Type: "miniflux", Secret: "test-hmac-secret", Config: `{"digest_id":"abc"}`, Active: true})
+	id, err := db.InsertWebhook(ctx, userID, Webhook{Type: "miniflux", Secret: "test-hmac-secret", Config: `{"digest_id":"abc"}`, Active: true})
 	if err != nil {
 		t.Fatalf("InsertWebhook: %v", err)
 	}
@@ -551,7 +563,7 @@ func TestWebhookCRUD(t *testing.T) {
 	}
 
 	// List webhooks
-	webhooks, err := db.GetWebhooks(userID)
+	webhooks, err := db.GetWebhooks(ctx, userID)
 	if err != nil {
 		t.Fatalf("GetWebhooks: %v", err)
 	}
@@ -569,7 +581,7 @@ func TestWebhookCRUD(t *testing.T) {
 	}
 
 	// Get by ID
-	w, err := db.GetWebhookByID(userID, id)
+	w, err := db.GetWebhookByID(ctx, userID, id)
 	if err != nil {
 		t.Fatalf("GetWebhookByID: %v", err)
 	}
@@ -581,16 +593,16 @@ func TestWebhookCRUD(t *testing.T) {
 	}
 
 	// Wrong user can't see it
-	w2, _ := db.GetWebhookByID("other-user", id)
+	w2, _ := db.GetWebhookByID(ctx, "other-user", id)
 	if w2 != nil {
 		t.Fatal("other user should not see this webhook")
 	}
 
 	// Delete webhook
-	if err := db.DeleteWebhook(userID, id); err != nil {
+	if err := db.DeleteWebhook(ctx, userID, id); err != nil {
 		t.Fatalf("DeleteWebhook: %v", err)
 	}
-	webhooks, _ = db.GetWebhooks(userID)
+	webhooks, _ = db.GetWebhooks(ctx, userID)
 	if len(webhooks) != 0 {
 		t.Fatalf("expected 0 webhooks after delete, got %d", len(webhooks))
 	}
@@ -598,13 +610,14 @@ func TestWebhookCRUD(t *testing.T) {
 
 func TestVirtualFeedFiltering(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
 	// Create a normal feed and a virtual feed
-	db.InsertFeed(testUserID, Feed{URL: "https://example.com/real", Name: "Real Feed", Active: true})
-	db.InsertFeed(testUserID, Feed{URL: "_ingest:abc123", Name: "Virtual Feed", Active: true})
+	db.InsertFeed(ctx, testUserID, Feed{URL: "https://example.com/real", Name: "Real Feed", Active: true})
+	db.InsertFeed(ctx, testUserID, Feed{URL: "_ingest:abc123", Name: "Virtual Feed", Active: true})
 
 	// GetActiveFeeds should only return the real feed
-	feeds, err := db.GetActiveFeeds(testUserID)
+	feeds, err := db.GetActiveFeeds(ctx, testUserID)
 	if err != nil {
 		t.Fatalf("GetActiveFeeds: %v", err)
 	}
@@ -618,9 +631,10 @@ func TestVirtualFeedFiltering(t *testing.T) {
 
 func TestCredentialCRUD(t *testing.T) {
 	db := setupTestDB(t)
+	ctx := context.Background()
 
 	// Create
-	id, err := db.InsertCredential(testUserID, Credential{
+	id, err := db.InsertCredential(ctx, testUserID, Credential{
 		Name:   "My Substack",
 		Type:   "substack_cookie",
 		Config: `{"substack_sid":"abc123"}`,
@@ -633,7 +647,7 @@ func TestCredentialCRUD(t *testing.T) {
 	}
 
 	// Read
-	cred, err := db.GetCredentialByID(testUserID, id)
+	cred, err := db.GetCredentialByID(ctx, testUserID, id)
 	if err != nil {
 		t.Fatalf("GetCredentialByID: %v", err)
 	}
@@ -651,7 +665,7 @@ func TestCredentialCRUD(t *testing.T) {
 	}
 
 	// List
-	creds, err := db.GetCredentials(testUserID)
+	creds, err := db.GetCredentials(ctx, testUserID)
 	if err != nil {
 		t.Fatalf("GetCredentials: %v", err)
 	}
@@ -662,17 +676,17 @@ func TestCredentialCRUD(t *testing.T) {
 	// Update
 	cred.Name = "Updated Name"
 	cred.Config = `{"substack_sid":"xyz789"}`
-	if err := db.UpdateCredential(testUserID, *cred); err != nil {
+	if err := db.UpdateCredential(ctx, testUserID, *cred); err != nil {
 		t.Fatalf("UpdateCredential: %v", err)
 	}
-	updated, _ := db.GetCredentialByID(testUserID, id)
+	updated, _ := db.GetCredentialByID(ctx, testUserID, id)
 	if updated.Name != "Updated Name" {
 		t.Fatalf("expected updated name, got %q", updated.Name)
 	}
 
 	// Link to feed
-	feedID, _ := db.InsertFeed(testUserID, Feed{URL: "https://example.substack.com/feed", Name: "Test", Active: true, CredentialID: &id})
-	feed, _ := db.GetActiveFeedByURL(testUserID, "https://example.substack.com/feed")
+	feedID, _ := db.InsertFeed(ctx, testUserID, Feed{URL: "https://example.substack.com/feed", Name: "Test", Active: true, CredentialID: &id})
+	feed, _ := db.GetActiveFeedByURL(ctx, testUserID, "https://example.substack.com/feed")
 	if feed == nil {
 		t.Fatal("expected feed")
 	}
@@ -681,16 +695,16 @@ func TestCredentialCRUD(t *testing.T) {
 	}
 
 	// Delete credential clears feed reference
-	if err := db.DeleteCredential(testUserID, id); err != nil {
+	if err := db.DeleteCredential(ctx, testUserID, id); err != nil {
 		t.Fatalf("DeleteCredential: %v", err)
 	}
-	feed, _ = db.GetActiveFeedByURL(testUserID, "https://example.substack.com/feed")
+	feed, _ = db.GetActiveFeedByURL(ctx, testUserID, "https://example.substack.com/feed")
 	if feed != nil && feed.CredentialID != nil {
 		t.Fatal("expected credential_id to be cleared after delete")
 	}
 
 	// Verify gone
-	gone, _ := db.GetCredentialByID(testUserID, id)
+	gone, _ := db.GetCredentialByID(ctx, testUserID, id)
 	if gone != nil {
 		t.Fatal("expected nil after delete")
 	}

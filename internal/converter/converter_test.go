@@ -1,6 +1,7 @@
 package converter
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -22,7 +23,7 @@ func TestGenerateDigestHTML(t *testing.T) {
 		},
 	}
 
-	path, err := GenerateDigestHTML("Morning Reading", articles)
+	path, err := GenerateDigestHTML(context.Background(), "Morning Reading", articles)
 	if err != nil {
 		t.Fatalf("GenerateDigestHTML: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestGenerateDigestHTML(t *testing.T) {
 }
 
 func TestGenerateDigestHTML_Empty(t *testing.T) {
-	path, err := GenerateDigestHTML("Empty Digest", nil)
+	path, err := GenerateDigestHTML(context.Background(), "Empty Digest", nil)
 	if err != nil {
 		t.Fatalf("GenerateDigestHTML: %v", err)
 	}

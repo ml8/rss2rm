@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -62,14 +62,14 @@ func (c *Client) authenticate(userToken string) (string, error) {
 		return "", nil
 	}
 
-	log.Printf("Auth failed (%v), attempting to refresh token...", err)
+	slog.Warn("auth failed, attempting token refresh", "component", "uploader", "error", err)
 
 	newUserToken, err := refreshUserToken(&httpCtx)
 	if err != nil {
 		return "", fmt.Errorf("auth failed and refresh failed: %w", err)
 	}
 
-	log.Printf("Token refreshed successfully")
+	slog.Info("token refreshed successfully", "component", "uploader")
 
 	tokens.UserToken = newUserToken
 	httpCtx = transport.CreateHttpClientCtx(tokens)
@@ -86,7 +86,7 @@ func (c *Client) authenticate(userToken string) (string, error) {
 
 // refreshAndRetry refreshes the token and returns the new token if successful.
 func (c *Client) refreshAndRetry() (string, error) {
-	log.Println("Refreshing token due to 401...")
+	slog.Info("refreshing token due to 401", "component", "uploader")
 
 	tokens := model.AuthTokens{
 		DeviceToken: c.deviceToken,
@@ -238,7 +238,7 @@ func (c *Client) Upload(filePath string, targetDirName string) (string, string, 
 		return "", "", err
 	}
 
-	log.Printf("Got 401, refreshing token and retrying upload...")
+	slog.Warn("got 401, refreshing token and retrying upload", "component", "uploader")
 
 	newToken, refreshErr := c.refreshAndRetry()
 	if refreshErr != nil {

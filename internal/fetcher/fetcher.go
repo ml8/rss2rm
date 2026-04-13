@@ -5,10 +5,11 @@
 package fetcher
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -54,29 +55,29 @@ func NewFactory(database *db.DB) *Factory {
 //   - User has Substack credential: always fetch the page. For verified
 //     Substack domains, use SSO to authenticate. Otherwise plain fetch.
 //   - Default: use storedContent if non-empty, otherwise fetch the URL.
-func (f *Factory) FetchContent(articleURL, storedContent, userID string) (*Result, error) {
+func (f *Factory) FetchContent(ctx context.Context, articleURL, storedContent, userID string) (*Result, error) {
 	if realURL, ok := parseHNContent(storedContent); ok {
-		log.Printf("[Fetcher] HN metadata detected, fetching article URL: %s", realURL)
-		return f.fetchPage(realURL, userID)
+		slog.Info("HN metadata detected, fetching article URL", "component", "fetcher", "url", realURL)
+		return f.fetchPage(ctx, realURL, userID)
 	}
 
-	if f.userHasSubstackCredential(userID) {
-		return f.fetchPage(articleURL, userID)
+	if f.userHasSubstackCredential(ctx, userID) {
+		return f.fetchPage(ctx, articleURL, userID)
 	}
 
-	return f.fetchDefault(articleURL, storedContent)
+	return f.fetchDefault(ctx, articleURL, storedContent)
 }
 
 // fetchDefault uses stored content if available, otherwise fetches the
 // URL with readability.
-func (f *Factory) fetchDefault(articleURL, storedContent string) (*Result, error) {
+func (f *Factory) fetchDefault(ctx context.Context, articleURL, storedContent string) (*Result, error) {
 	if storedContent != "" {
 		return &Result{Content: storedContent}, nil
 	}
 	if articleURL == "" {
 		return nil, fmt.Errorf("no content and no URL to fetch")
 	}
-	article, err := processor.Process(articleURL, nil)
+	article, err := processor.Process(ctx, articleURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("fetch failed: %w", err)
 	}
@@ -85,15 +86,15 @@ func (f *Factory) fetchDefault(articleURL, storedContent string) (*Result, error
 
 // fetchPage fetches the article page. For verified Substack domains,
 // performs SSO to authenticate. For everything else, plain readability fetch.
-func (f *Factory) fetchPage(articleURL, userID string) (*Result, error) {
+func (f *Factory) fetchPage(ctx context.Context, articleURL, userID string) (*Result, error) {
 	if f.isSubstackDomain(articleURL) {
-		sid := f.getSubstackSID(userID)
+		sid := f.getSubstackSID(ctx, userID)
 		if sid != "" {
-			return f.fetchWithSSO(articleURL, sid)
+			return f.fetchWithSSO(ctx, articleURL, sid)
 		}
 	}
 
-	article, err := processor.Process(articleURL, nil)
+	article, err := processor.Process(ctx, articleURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("page fetch failed: %w", err)
 	}
@@ -107,17 +108,17 @@ func (f *Factory) fetchPage(articleURL, userID string) (*Result, error) {
 // 3. Follow redirects — publication sets connect.sid in the cookie jar
 // 4. Fetch article with the cookie jar (now has connect.sid)
 // 5. Extract content with readability
-func (f *Factory) fetchWithSSO(articleURL, substackSID string) (*Result, error) {
+func (f *Factory) fetchWithSSO(ctx context.Context, articleURL, substackSID string) (*Result, error) {
 	parsed, err := url.Parse(articleURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
 	}
 	host := parsed.Hostname()
 
-	slug, err := f.findPubSlug(host)
+	slug, err := f.findPubSlug(ctx, host)
 	if err != nil {
-		log.Printf("[Fetcher] Could not find pub slug for %s, plain fetch: %v", host, err)
-		article, ferr := processor.Process(articleURL, nil)
+		slog.Warn("could not find pub slug, plain fetch", "component", "fetcher", "host", host, "error", err)
+		article, ferr := processor.Process(ctx, articleURL, nil)
 		if ferr != nil {
 			return nil, ferr
 		}
@@ -137,8 +138,12 @@ func (f *Factory) fetchWithSSO(articleURL, substackSID string) (*Result, error) 
 
 	// SSO exchange: follow redirects to get connect.sid on publication domain
 	ssoURL := fmt.Sprintf("https://substack.com/sign-in?redirect=%%2F&for_pub=%s", slug)
-	log.Printf("[Fetcher] SSO exchange for pub=%s (domain=%s)", slug, host)
-	ssoResp, err := client.Get(ssoURL)
+	slog.Info("SSO exchange", "component", "fetcher", "pub", slug, "domain", host)
+	ssoReq, err := http.NewRequestWithContext(ctx, "GET", ssoURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("SSO request creation failed: %w", err)
+	}
+	ssoResp, err := client.Do(ssoReq)
 	if err != nil {
 		return nil, fmt.Errorf("SSO exchange failed: %w", err)
 	}
@@ -155,12 +160,16 @@ func (f *Factory) fetchWithSSO(articleURL, substackSID string) (*Result, error) 
 		}
 	}
 	if !ssoOK {
-		log.Printf("[Fetcher] SSO did not produce connect.sid for %s — cookie may be expired", host)
+		slog.Warn("SSO did not produce connect.sid — cookie may be expired", "component", "fetcher", "host", host)
 	}
 
 	// Fetch authenticated article page
-	log.Printf("[Fetcher] Fetching authenticated page: %s", articleURL)
-	resp, err := client.Get(articleURL)
+	slog.Info("fetching authenticated page", "component", "fetcher", "url", articleURL)
+	articleReq, err := http.NewRequestWithContext(ctx, "GET", articleURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("article request creation failed: %w", err)
+	}
+	resp, err := client.Do(articleReq)
 	if err != nil {
 		return nil, fmt.Errorf("authenticated fetch failed: %w", err)
 	}
@@ -171,7 +180,7 @@ func (f *Factory) fetchWithSSO(articleURL, substackSID string) (*Result, error) 
 	}
 
 	parsedURL, _ := url.Parse(articleURL)
-	article, err := processor.ProcessReader(resp.Body, parsedURL)
+	article, err := processor.ProcessReader(ctx, resp.Body, parsedURL)
 	if err != nil {
 		return nil, fmt.Errorf("readability extraction failed: %w", err)
 	}
@@ -182,7 +191,7 @@ func (f *Factory) fetchWithSSO(articleURL, substackSID string) (*Result, error) 
 // findPubSlug returns the Substack publication slug for a domain.
 // For *.substack.com, it's the subdomain. For custom domains, it's
 // extracted from the page HTML and cached.
-func (f *Factory) findPubSlug(host string) (string, error) {
+func (f *Factory) findPubSlug(ctx context.Context, host string) (string, error) {
 	if before, ok := strings.CutSuffix(host, ".substack.com"); ok {
 		return before, nil
 	}
@@ -195,7 +204,11 @@ func (f *Factory) findPubSlug(host string) (string, error) {
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get("https://" + host)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://"+host, nil)
+	if err != nil {
+		return "", fmt.Errorf("request creation failed: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch homepage: %w", err)
 	}
@@ -216,7 +229,7 @@ func (f *Factory) findPubSlug(host string) (string, error) {
 	f.cacheMu.Lock()
 	f.slugCache[host] = slug
 	f.cacheMu.Unlock()
-	log.Printf("[Fetcher] Discovered pub slug for %s: %s", host, slug)
+	slog.Info("discovered pub slug", "component", "fetcher", "host", host, "slug", slug)
 	return slug, nil
 }
 
@@ -250,7 +263,7 @@ func (f *Factory) isSubstackDomain(rawURL string) bool {
 	f.cacheMu.Unlock()
 
 	if isSubstack {
-		log.Printf("[Fetcher] DNS confirms %s is a Substack domain", host)
+		slog.Info("DNS confirms Substack domain", "component", "fetcher", "host", host)
 	}
 	return isSubstack
 }
@@ -263,8 +276,8 @@ func checkSubstackCNAME(host string) bool {
 	return strings.Contains(strings.ToLower(cname), "substack")
 }
 
-func (f *Factory) userHasSubstackCredential(userID string) bool {
-	creds, err := f.db.GetCredentials(userID)
+func (f *Factory) userHasSubstackCredential(ctx context.Context, userID string) bool {
+	creds, err := f.db.GetCredentials(ctx, userID)
 	if err != nil {
 		return false
 	}
@@ -277,8 +290,8 @@ func (f *Factory) userHasSubstackCredential(userID string) bool {
 }
 
 // getSubstackSID returns the substack.sid value from the user's credential.
-func (f *Factory) getSubstackSID(userID string) string {
-	creds, err := f.db.GetCredentials(userID)
+func (f *Factory) getSubstackSID(ctx context.Context, userID string) string {
+	creds, err := f.db.GetCredentials(ctx, userID)
 	if err != nil {
 		return ""
 	}
