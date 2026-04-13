@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,8 +18,8 @@ import (
 
 	"rss2rm/internal/converter"
 	"rss2rm/internal/db"
+	"rss2rm/internal/fetcher"
 	"rss2rm/internal/importer"
-	"rss2rm/internal/processor"
 )
 
 // Service defines the interface for all feed, destination, and digest
@@ -71,6 +72,13 @@ type Service interface {
 	ListWebhooks(ctx context.Context) ([]db.Webhook, error)
 	GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error)
 	RemoveWebhook(ctx context.Context, id string) error
+
+	// Credential management
+	ListCredentials(ctx context.Context) ([]db.Credential, error)
+	GetCredentialByID(ctx context.Context, id string) (*db.Credential, error)
+	AddCredential(ctx context.Context, name, credType, config string) (string, error)
+	UpdateCredential(ctx context.Context, cred db.Credential) error
+	RemoveCredential(ctx context.Context, id string) error
 }
 
 // EventType identifies the kind of event emitted during feed polling.
@@ -137,14 +145,54 @@ func UserIDFromContext(ctx context.Context) string {
 
 // LocalService implements [Service] using direct database access.
 type LocalService struct {
-	db *db.DB
+	db      *db.DB
+	fetcher *fetcher.Factory
 }
 
 // NewFeedService returns a new [LocalService] backed by the given database.
-func NewFeedService(database *db.DB) Service {
+func NewFeedService(database *db.DB, f *fetcher.Factory) *LocalService {
 	return &LocalService{
-		db: database,
+		db:      database,
+		fetcher: f,
 	}
+}
+
+// credentialCookies returns HTTP cookies from a credential's config, or nil
+// if the credential is nil or has no applicable cookies. Supports credential
+// types: "substack_cookie" (config key "connect_sid" or "substack_sid").
+func credentialCookies(cred *db.Credential) []*http.Cookie {
+	if cred == nil || cred.Config == "" {
+		return nil
+	}
+	var cfg map[string]string
+	if err := json.Unmarshal([]byte(cred.Config), &cfg); err != nil {
+		return nil
+	}
+	switch cred.Type {
+	case "substack_cookie":
+		sid := cfg["connect_sid"]
+		if sid == "" {
+			sid = cfg["substack_sid"]
+		}
+		if sid == "" {
+			return nil
+		}
+		return []*http.Cookie{
+			{Name: "connect.sid", Value: sid, Path: "/"},
+			{Name: "substack.sid", Value: sid, Path: "/"},
+		}
+	default:
+		return nil
+	}
+}
+
+// lookupCredential fetches the credential for a feed, or nil if none is set.
+func (s *LocalService) lookupCredential(userID string, credentialID *string) *db.Credential {
+	if credentialID == nil {
+		return nil
+	}
+	cred, _ := s.db.GetCredentialByID(userID, *credentialID)
+	return cred
 }
 
 func (s *LocalService) AddDestination(ctx context.Context, destType, name string, config map[string]string, isDefault bool) (string, error) {
@@ -381,6 +429,7 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 	// Render articles
 	var articles []converter.DigestArticle
 	var maxEntryID int64
+	var failedEntries []db.Entry
 
 	for _, entry := range entries {
 		select {
@@ -391,23 +440,19 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 		log.Printf("[Digest] Rendering article %q for digest %q", entry.Title, digest.Name)
 		onEvent(PollEvent{Type: EventItemFound, ItemTitle: entry.Title, Message: "Rendering for digest"})
 
-		var title, byline, content string
-		if entry.Content != "" {
-			// Use stored content (e.g., from article ingest)
-			title = entry.Title
-			content = entry.Content
-		} else {
-			// Fetch and extract content from URL
-			article, err := processor.Process(entry.URL)
-			if err != nil {
-				log.Printf("[Digest] Processing failed for %q: %v", entry.Title, err)
-				onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
-				continue
-			}
-			title = article.Title
-			byline = article.Byline
-			content = article.Content
+		result, err := s.fetcher.FetchContent(entry.URL, entry.Content, userID)
+		if err != nil {
+			log.Printf("[Digest] Processing failed for %q: %v", entry.Title, err)
+			onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
+			failedEntries = append(failedEntries, entry)
+			continue
 		}
+		title := result.Title
+		if title == "" {
+			title = entry.Title
+		}
+		byline := result.Byline
+		content := result.Content
 		articles = append(articles, converter.DigestArticle{
 			Title: title, Byline: byline, Content: content,
 			FeedName: feedNames[entry.FeedID],
@@ -417,9 +462,18 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 		}
 	}
 
+	// Include failed entries in cursor advancement
+	for _, fe := range failedEntries {
+		if fe.ID > maxEntryID {
+			maxEntryID = fe.ID
+		}
+	}
+
 	if len(articles) == 0 {
 		log.Printf("[Digest] All articles failed to render for %q", digest.Name)
 		onEvent(PollEvent{Type: EventFinish, Message: "All articles failed to render"})
+		// Re-enqueue failed entries even if nothing was delivered
+		s.reEnqueueEntries(userID, failedEntries)
 		return nil
 	}
 
@@ -490,10 +544,33 @@ func (s *LocalService) GenerateDigest(ctx context.Context, digestID string, onEv
 		return fmt.Errorf("failed to mark digest generated: %w", err)
 	}
 
+	// Re-enqueue failed entries above the new cursor so they appear in the next run
+	s.reEnqueueEntries(userID, failedEntries)
+
 	log.Printf("[Digest] Digest %q uploaded successfully (%d articles, cursor→%d)", digest.Name, len(articles), maxEntryID)
 	onEvent(PollEvent{Type: EventItemUploaded, Message: fmt.Sprintf("Digest uploaded: %d articles", len(articles))})
 	onEvent(PollEvent{Type: EventFinish, Message: "Digest generation complete"})
 	return nil
+}
+
+// reEnqueueEntries re-creates failed entries with new IDs so they appear
+// above the digest cursor in the next generation run.
+func (s *LocalService) reEnqueueEntries(userID string, entries []db.Entry) {
+	for _, e := range entries {
+		newEntry := db.Entry{
+			FeedID:    e.FeedID,
+			EntryID:   fmt.Sprintf("%s-retry-%d", e.EntryID, time.Now().UnixNano()),
+			Title:     e.Title,
+			URL:       e.URL,
+			Published: e.Published,
+			Content:   e.Content,
+		}
+		if err := s.db.CreateEntry(userID, newEntry); err != nil {
+			log.Printf("[Digest] Failed to re-enqueue %q: %v", e.Title, err)
+			continue
+		}
+		log.Printf("[Digest] Re-enqueued %q for next digest run", e.Title)
+	}
 }
 
 // PollFeeds fetches new items from active feeds, discovers entries, and
@@ -552,7 +629,14 @@ func (s *LocalService) processFeed(ctx context.Context, feed db.Feed, onEvent fu
 		limit = opts.BackfillLimit
 	}
 
-	items, err := importer.Fetch(feed.URL, limit)
+	// Look up credential for authenticated fetching (e.g., Substack)
+	cred := s.lookupCredential(userID, feed.CredentialID)
+	var fetchOpts *importer.FetchOptions
+	if cookies := credentialCookies(cred); len(cookies) > 0 {
+		fetchOpts = &importer.FetchOptions{Cookies: cookies}
+	}
+
+	items, err := importer.Fetch(feed.URL, limit, fetchOpts)
 	if err != nil {
 		log.Printf("[Poll] Fetch failed for %q: %v", feed.Name, err)
 		onEvent(PollEvent{FeedURL: feed.URL, Type: EventError, Message: fmt.Sprintf("Fetch failed: %v", err)})
@@ -637,14 +721,14 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 		return err
 	}
 
-	article, err := processor.Process(entry.URL)
+	result, err := s.fetcher.FetchContent(entry.URL, entry.Content, userID)
 	if err != nil {
 		log.Printf("[Delivery] Article processing failed for %q: %v", entry.Title, err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("Processing failed: %v", err)})
 		return err
 	}
 
-	htmlPath, err := converter.GenerateHTML(article.Title, article.Content, article.Byline)
+	htmlPath, err := converter.GenerateHTML(result.Title, result.Content, result.Byline)
 	if err != nil {
 		log.Printf("[Delivery] HTML generation failed for %q: %v", entry.Title, err)
 		onEvent(PollEvent{Type: EventError, ItemTitle: entry.Title, Message: fmt.Sprintf("HTML generation failed: %v", err)})
@@ -659,7 +743,7 @@ func (s *LocalService) deliverEntry(ctx context.Context, fd db.FeedDelivery, ent
 	}
 	defer os.RemoveAll(renderDir)
 
-	pdfName := fmt.Sprintf("%s - %s.pdf", entry.Published.Format("2006-01-02"), SanitizeFilename(article.Title))
+	pdfName := fmt.Sprintf("%s - %s.pdf", entry.Published.Format("2006-01-02"), SanitizeFilename(result.Title))
 	tmpPDF := filepath.Join(renderDir, pdfName)
 
 	log.Printf("[Delivery] Converting to PDF: %s", pdfName)
@@ -728,13 +812,13 @@ func (s *LocalService) DeliverArticle(ctx context.Context, title, articleURL, co
 		if articleURL == "" {
 			return fmt.Errorf("either url or content is required")
 		}
-		article, err := processor.Process(articleURL)
+		result, err := s.fetcher.FetchContent(articleURL, "", userID)
 		if err != nil {
 			return fmt.Errorf("failed to process article: %w", err)
 		}
-		title = article.Title
-		byline = article.Byline
-		content = article.Content
+		title = result.Title
+		byline = result.Byline
+		content = result.Content
 	}
 
 	// Resolve destination
@@ -826,13 +910,13 @@ func (s *LocalService) ingestToDigest(ctx context.Context, userID, title, articl
 
 	// If content not provided, fetch it
 	if content == "" && articleURL != "" {
-		article, err := processor.Process(articleURL)
+		result, err := s.fetcher.FetchContent(articleURL, "", userID)
 		if err != nil {
 			return fmt.Errorf("failed to process article: %w", err)
 		}
-		content = article.Content
+		content = result.Content
 		if title == "" {
-			title = article.Title
+			title = result.Title
 		}
 	}
 
@@ -997,4 +1081,34 @@ func (s *LocalService) RemoveWebhook(ctx context.Context, id string) error {
 
 func (s *LocalService) GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error) {
 	return s.db.GetWebhookByID(UserIDFromContext(ctx), id)
+}
+
+// ListCredentials returns all credentials for the authenticated user.
+func (s *LocalService) ListCredentials(ctx context.Context) ([]db.Credential, error) {
+	return s.db.GetCredentials(UserIDFromContext(ctx))
+}
+
+// GetCredentialByID returns a single credential by ID.
+func (s *LocalService) GetCredentialByID(ctx context.Context, id string) (*db.Credential, error) {
+	return s.db.GetCredentialByID(UserIDFromContext(ctx), id)
+}
+
+// AddCredential creates a new credential and returns its ID.
+func (s *LocalService) AddCredential(ctx context.Context, name, credType, config string) (string, error) {
+	cred := db.Credential{
+		Name:   name,
+		Type:   credType,
+		Config: config,
+	}
+	return s.db.InsertCredential(UserIDFromContext(ctx), cred)
+}
+
+// UpdateCredential updates an existing credential.
+func (s *LocalService) UpdateCredential(ctx context.Context, cred db.Credential) error {
+	return s.db.UpdateCredential(UserIDFromContext(ctx), cred)
+}
+
+// RemoveCredential deletes a credential by ID.
+func (s *LocalService) RemoveCredential(ctx context.Context, id string) error {
+	return s.db.DeleteCredential(UserIDFromContext(ctx), id)
 }

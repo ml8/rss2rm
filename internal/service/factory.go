@@ -34,6 +34,7 @@ func RegisteredDestinationTypes() []string {
 	sort.Strings(types)
 	return types
 }
+
 // CreateDestinationInstance uses the registered factory to create a [Destination] of the given type.
 func CreateDestinationInstance(typeStr, configJSON string) (Destination, error) {
 	factory, ok := destinationFactories[typeStr]

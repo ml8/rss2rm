@@ -131,14 +131,14 @@ func (d *NotionDestination) Upload(ctx context.Context, filePath string, targetP
 }
 
 // buildPageRequest creates the Notion API request body for creating a page.
-func (d *NotionDestination) buildPageRequest(title, feedName string) map[string]interface{} {
+func (d *NotionDestination) buildPageRequest(title, feedName string) map[string]any {
 	// Build content blocks
-	children := []map[string]interface{}{
+	children := []map[string]any{
 		{
 			"object": "block",
 			"type":   "paragraph",
-			"paragraph": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
+			"paragraph": map[string]any{
+				"rich_text": []map[string]any{
 					{
 						"type": "text",
 						"text": map[string]string{
@@ -151,8 +151,8 @@ func (d *NotionDestination) buildPageRequest(title, feedName string) map[string]
 		{
 			"object": "block",
 			"type":   "paragraph",
-			"paragraph": map[string]interface{}{
-				"rich_text": []map[string]interface{}{
+			"paragraph": map[string]any{
+				"rich_text": []map[string]any{
 					{
 						"type": "text",
 						"text": map[string]string{
@@ -165,14 +165,14 @@ func (d *NotionDestination) buildPageRequest(title, feedName string) map[string]
 		{
 			"object":  "block",
 			"type":    "divider",
-			"divider": map[string]interface{}{},
+			"divider": map[string]any{},
 		},
 	}
 
-	pageData := map[string]interface{}{
-		"properties": map[string]interface{}{
-			"title": map[string]interface{}{
-				"title": []map[string]interface{}{
+	pageData := map[string]any{
+		"properties": map[string]any{
+			"title": map[string]any{
+				"title": []map[string]any{
 					{
 						"text": map[string]string{
 							"content": title,

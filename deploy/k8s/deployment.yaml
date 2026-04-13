@@ -85,6 +85,8 @@ spec:
             #     secretKeyRef:
             #       name: rss2rm-smtp-secrets
             #       key: from
+            - name: TZ
+              value: America/Los_Angeles
           ports:
             - containerPort: 8080
             - containerPort: 9090

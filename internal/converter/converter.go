@@ -106,9 +106,9 @@ func HTMLToPDF(htmlPath, pdfPath, commandTemplate string) error {
 
 // DigestArticle represents a single article within a digest.
 type DigestArticle struct {
-	Title   string
-	Byline  string
-	Content string
+	Title    string
+	Byline   string
+	Content  string
 	FeedName string
 }
 

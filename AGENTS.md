@@ -13,6 +13,8 @@
 9. Do not push to GitHub.
 10. Do not make git commits. Leave all changes unstaged for human review.
 11. Celebrate major changes with a cat party. Add a dated `.txt` file to `cat_party/` (e.g., `2026-03-24_01_feature-name.txt`). Use a two-digit sequence number after the date for ordering. ASCII art, kittens, 80 columns max. Run with `python3 cat_party.py`.
+12. Include a statement of confidence with recommendations, plans, and analyses. Be explicit about what you are sure of, what you are less sure of, and what you are guessing at. Intellectual honesty is mandatory.
+13. Enumerate the top risks to any plan or recommendation, ordered by likelihood. Consider your own fallibility — double-check work against current best practices. Verify assumptions before acting on them.
 
 ## Build & Test
 
@@ -89,7 +91,7 @@ Destination resolution:
 ## Database Schema
 
 ```sql
-feeds (id TEXT PK, url, name, last_polled, active, backfill, user_id)
+feeds (id TEXT PK, url, name, last_polled, active, backfill, credential_id, user_id)
 feed_delivery (feed_id TEXT PK, directory, destination_id, last_delivered_id, retain, user_id)
 digests (id TEXT PK, name, directory, schedule, destination_id, last_generated, last_delivered_id, active, retain, user_id)
 digest_feeds (digest_id, feed_id) -- M:N join
@@ -97,6 +99,7 @@ entries (id INTEGER PK auto-increment, feed_id, entry_id, title, url, published,
 delivered_files (id INTEGER PK, user_id, delivery_type, delivery_ref, entry_id, remote_path, destination_id, delivered_at)
 destinations (id TEXT PK, name, type, config, is_default, user_id)
 webhooks (id TEXT PK, user_id, type, secret, config, active)
+credentials (id TEXT PK, user_id, name, type, config, updated_at)
 users (id TEXT PK, email, password_hash, verified, verify_token, verify_expires, created_at)
 sessions (token TEXT PK, user_id, created_at, expires_at)
 settings (key TEXT PK, value)

@@ -40,7 +40,7 @@ func NewRemoteService(url string) *RemoteService {
 }
 
 func (s *RemoteService) AddFeed(ctx context.Context, feed db.Feed) error {
-	data, err := json.Marshal(map[string]interface{}{
+	data, err := json.Marshal(map[string]any{
 		"url":      feed.URL,
 		"name":     feed.Name,
 		"backfill": feed.Backfill,
@@ -68,7 +68,7 @@ func (s *RemoteService) AddFeed(ctx context.Context, feed db.Feed) error {
 }
 
 func (s *RemoteService) UpdateFeed(ctx context.Context, feed db.Feed) error {
-    return ErrLocalOnly
+	return ErrLocalOnly
 }
 
 func (s *RemoteService) RemoveFeed(ctx context.Context, feedURL string) error {
@@ -115,7 +115,7 @@ func (s *RemoteService) ListFeeds(ctx context.Context) ([]db.Feed, error) {
 func (s *RemoteService) PollFeeds(ctx context.Context, filterURLs []string, onEvent func(service.PollEvent)) error {
 	opts := service.PollOptionsFromContext(ctx)
 	// Trigger Poll
-	data, _ := json.Marshal(map[string]interface{}{
+	data, _ := json.Marshal(map[string]any{
 		"urls":     filterURLs,
 		"backfill": opts.BackfillLimit,
 	})
@@ -157,8 +157,8 @@ func (s *RemoteService) PollFeeds(ctx context.Context, filterURLs []string, onEv
 	scanner := bufio.NewScanner(respStream.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "data: ") {
-			jsonStr := strings.TrimPrefix(line, "data: ")
+		if after, ok := strings.CutPrefix(line, "data: "); ok {
+			jsonStr := after
 			var e service.PollEvent
 			if err := json.Unmarshal([]byte(jsonStr), &e); err == nil {
 				onEvent(e)
@@ -301,4 +301,24 @@ func (s *RemoteService) RemoveWebhook(ctx context.Context, id string) error {
 
 func (s *RemoteService) GetWebhookByID(ctx context.Context, id string) (*db.Webhook, error) {
 	return nil, ErrLocalOnly
+}
+
+func (s *RemoteService) ListCredentials(ctx context.Context) ([]db.Credential, error) {
+	return nil, ErrLocalOnly
+}
+
+func (s *RemoteService) GetCredentialByID(ctx context.Context, id string) (*db.Credential, error) {
+	return nil, ErrLocalOnly
+}
+
+func (s *RemoteService) AddCredential(ctx context.Context, name, credType, config string) (string, error) {
+	return "", ErrLocalOnly
+}
+
+func (s *RemoteService) UpdateCredential(ctx context.Context, cred db.Credential) error {
+	return ErrLocalOnly
+}
+
+func (s *RemoteService) RemoveCredential(ctx context.Context, id string) error {
+	return ErrLocalOnly
 }

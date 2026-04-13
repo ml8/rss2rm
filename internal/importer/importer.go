@@ -3,6 +3,8 @@ package importer
 
 import (
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"time"
 
 	"github.com/mmcdole/gofeed"
@@ -17,14 +19,26 @@ type Item struct {
 	Content   string
 }
 
-// Fetch downloads and parses the feed at url, returning up to limit items
-// ordered newest first.
-func Fetch(url string, limit int) ([]*Item, error) {
+// FetchOptions holds optional configuration for feed fetching, such as
+// authentication cookies for paywalled sources.
+type FetchOptions struct {
+	Cookies []*http.Cookie
+}
+
+// Fetch downloads and parses the feed at feedURL, returning up to limit items
+// ordered newest first. If opts is non-nil, its cookies are attached to the
+// HTTP request.
+func Fetch(feedURL string, limit int, opts *FetchOptions) ([]*Item, error) {
 	fp := gofeed.NewParser()
-	fp.Client = &http.Client{
+	client := &http.Client{
 		Timeout: 30 * time.Second,
 	}
-	feed, err := fp.ParseURL(url)
+	if opts != nil && len(opts.Cookies) > 0 {
+		jar, _ := newSimpleJar(feedURL, opts.Cookies)
+		client.Jar = jar
+	}
+	fp.Client = client
+	feed, err := fp.ParseURL(feedURL)
 	if err != nil {
 		return nil, err
 	}
@@ -70,4 +84,19 @@ func Fetch(url string, limit int) ([]*Item, error) {
 	}
 
 	return items, nil
+}
+
+// newSimpleJar creates a cookie jar pre-loaded with the given cookies
+// for the domain of feedURL.
+func newSimpleJar(feedURL string, cookies []*http.Cookie) (http.CookieJar, error) {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := url.Parse(feedURL)
+	if err != nil {
+		return nil, err
+	}
+	jar.SetCookies(parsed, cookies)
+	return jar, nil
 }

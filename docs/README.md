@@ -182,6 +182,30 @@ Note: `url` is NOT unique in `feeds` table. Adding the same URL creates a new fe
 
 *   **WeasyPrint**: Converts HTML to PDF. Handles WebP images and modern CSS.
 
+## Substack Authentication
+
+Substack RSS feeds truncate paywalled posts unless fetched with a valid
+subscriber session cookie. rss2rm supports authenticated fetching for
+subscribers.
+
+### Setup
+
+1. **Log in** to [substack.com](https://substack.com) in your browser.
+2. Open **Developer Tools** (F12, or right-click → Inspect).
+3. Go to **Application** (Chrome) or **Storage** (Firefox) → **Cookies** →
+   `https://substack.com`.
+4. Find the cookie named `substack.sid` and copy its value.
+
+### In rss2rm
+
+1. Go to the **Credentials** section in the web UI.
+2. Create a new credential with type "Substack Cookie" and paste the SID.
+3. When adding or editing a feed, select this credential from the dropdown.
+
+The cookie is valid for approximately 3 months. When it expires, update the
+credential with a fresh cookie — all linked feeds will pick up the change
+automatically. The UI shows a warning when a credential is approaching expiry.
+
 ## API Reference
 
 Base URL: `http://localhost:8080/api/v1`
@@ -463,6 +487,36 @@ Registration mode is configurable via the `-registration` flag: `open` (default)
 #### Verify Email
 *   **GET** `/auth/verify?token=NONCE`
 *   **Response**: `200 OK`: `{"status": "verified"}` or error if token is invalid/expired.
+
+### Credentials
+
+Credentials store authentication tokens for fetching content from paywalled
+sources. A credential can be linked to one or more feeds via `credential_id`.
+
+#### List Credentials
+*   **GET** `/credentials`
+*   **Response** `200 OK`: Array of credentials with config values redacted.
+
+#### Add Credential
+*   **POST** `/credentials`
+*   **Body**:
+    ```json
+    {
+      "name": "My Substack",
+      "type": "substack_cookie",
+      "config": {"substack_sid": "your-session-cookie-here"}
+    }
+    ```
+*   **Response** `201 Created`: `{"status": "created", "id": "..."}`
+
+#### Update Credential
+*   **PUT** `/credentials/{id}`
+*   **Body**: Same as Add.
+*   **Response** `200 OK`: `{"status": "ok"}`
+
+#### Delete Credential
+*   **DELETE** `/credentials/{id}`
+*   **Response** `204 No Content`. Feeds referencing this credential have their `credential_id` cleared.
 
 ### Health
 

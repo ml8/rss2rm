@@ -109,7 +109,7 @@ func (d *DropboxDestination) Upload(ctx context.Context, filePath string, target
 	dropboxPath = strings.ReplaceAll(dropboxPath, "\\", "/")
 
 	// Prepare the Dropbox-API-Arg header
-	apiArg := map[string]interface{}{
+	apiArg := map[string]any{
 		"path":            dropboxPath,
 		"mode":            "overwrite",
 		"autorename":      false,

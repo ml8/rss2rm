@@ -198,6 +198,12 @@ func (s *Server) registerRoutes() {
 	authed.HandleFunc("POST /api/v1/webhooks", s.handleAddWebhook)
 	authed.HandleFunc("DELETE /api/v1/webhooks/{id}", s.handleRemoveWebhook)
 
+	// Credentials
+	authed.HandleFunc("GET /api/v1/credentials", s.handleListCredentials)
+	authed.HandleFunc("POST /api/v1/credentials", s.handleAddCredential)
+	authed.HandleFunc("PUT /api/v1/credentials/{id}", s.handleUpdateCredential)
+	authed.HandleFunc("DELETE /api/v1/credentials/{id}", s.handleRemoveCredential)
+
 	// Webhook receiver (HMAC-authenticated, not bearer-authenticated)
 	// Must be registered before the /api/v1/ catch-all.
 	s.mux.HandleFunc("POST /api/v1/webhook/miniflux", s.handleMinifluxWebhook)
@@ -257,8 +263,8 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 
 func (s *Server) extractToken(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
-		if strings.HasPrefix(auth, "Bearer ") {
-			return strings.TrimPrefix(auth, "Bearer ")
+		if after, ok := strings.CutPrefix(auth, "Bearer "); ok {
+			return after
 		}
 	}
 	if cookie, err := r.Cookie("session"); err == nil {
@@ -290,7 +296,7 @@ func requirePathValue(w http.ResponseWriter, r *http.Request, key string) (strin
 
 // decodeJSON reads JSON from the request body into v. Returns false
 // and writes a 400 response if decoding fails.
-func decodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) bool {
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
 		http.Error(w, "invalid JSON", http.StatusBadRequest)
 		return false
@@ -299,7 +305,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v interface{}) bool {
 }
 
 // writeJSON encodes v as JSON to w with the correct Content-Type header.
-func writeJSON(w http.ResponseWriter, v interface{}) {
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
 }
@@ -373,7 +379,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 		log.Printf("[Auth] User registered (pending verification): email=%s id=%s ip=%s", req.Email, id, r.RemoteAddr)
 		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, map[string]interface{}{
+		writeJSON(w, map[string]any{
 			"status":  "verification_required",
 			"message": "Check your email for a verification link.",
 		})
@@ -398,7 +404,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	session, err := s.db.CreateSession(id)
 	if err != nil {
 		w.WriteHeader(http.StatusCreated)
-		writeJSON(w, map[string]interface{}{"status": "created", "id": id})
+		writeJSON(w, map[string]any{"status": "created", "id": id})
 		return
 	}
 
@@ -412,7 +418,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, map[string]interface{}{
+	writeJSON(w, map[string]any{
 		"status": "created",
 		"token":  session.Token,
 	})
@@ -458,7 +464,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   30 * 24 * 60 * 60,
 	})
 
-	writeJSON(w, map[string]interface{}{
+	writeJSON(w, map[string]any{
 		"status": "ok",
 		"token":  session.Token,
 	})
@@ -490,7 +496,7 @@ func (s *Server) handleGetCurrentUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "user not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]interface{}{
+	writeJSON(w, map[string]any{
 		"id":    user.ID,
 		"email": user.Email,
 	})
@@ -646,7 +652,7 @@ func (s *Server) handleAddDestination(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, map[string]interface{}{"status": "created", "id": id})
+	writeJSON(w, map[string]any{"status": "created", "id": id})
 }
 
 func (s *Server) handleRemoveDestination(w http.ResponseWriter, r *http.Request) {
@@ -855,11 +861,12 @@ if (window.opener) {
 
 func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		URL                 string `json:"url"`
-		Name                string `json:"name"`
-		Directory           string `json:"directory"`
-		Backfill            int    `json:"backfill"`
-		DeliverIndividually *bool  `json:"deliver_individually,omitempty"`
+		URL                 string  `json:"url"`
+		Name                string  `json:"name"`
+		Directory           string  `json:"directory"`
+		Backfill            int     `json:"backfill"`
+		DeliverIndividually *bool   `json:"deliver_individually,omitempty"`
+		CredentialID        *string `json:"credential_id,omitempty"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
@@ -870,9 +877,10 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	feed := db.Feed{
-		URL:      req.URL,
-		Name:     req.Name,
-		Backfill: req.Backfill,
+		URL:          req.URL,
+		Name:         req.Name,
+		Backfill:     req.Backfill,
+		CredentialID: req.CredentialID,
 	}
 
 	if err := s.svc.AddFeed(r.Context(), feed); err != nil {
@@ -911,17 +919,18 @@ func (s *Server) handleEditFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name                string `json:"name"`
-		Directory           string `json:"directory"`
-		DeliverIndividually *bool  `json:"deliver_individually,omitempty"`
-		Retain              *int   `json:"retain,omitempty"`
+		Name                string  `json:"name"`
+		Directory           string  `json:"directory"`
+		DeliverIndividually *bool   `json:"deliver_individually,omitempty"`
+		Retain              *int    `json:"retain,omitempty"`
+		CredentialID        *string `json:"credential_id,omitempty"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 
-	// Update feed name if provided
-	if req.Name != "" {
+	// Update feed-level fields (name, credential_id) if provided
+	if req.Name != "" || req.CredentialID != nil {
 		feeds, err := s.svc.ListFeeds(r.Context())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -929,7 +938,12 @@ func (s *Server) handleEditFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, f := range feeds {
 			if f.ID == id {
-				f.Name = req.Name
+				if req.Name != "" {
+					f.Name = req.Name
+				}
+				if req.CredentialID != nil {
+					f.CredentialID = req.CredentialID
+				}
 				s.svc.UpdateFeed(r.Context(), f)
 				break
 			}
@@ -1238,7 +1252,6 @@ func isDigestDue(d db.Digest, now time.Time) bool {
 		return false
 	}
 
-	// Today's scheduled time in local timezone
 	scheduledTime := time.Date(now.Year(), now.Month(), now.Day(), schedHour, schedMin, 0, 0, now.Location())
 
 	// Not yet past scheduled time today
@@ -1309,7 +1322,7 @@ func (s *Server) handleAddDigest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, map[string]interface{}{"status": "created", "id": id})
+	writeJSON(w, map[string]any{"status": "created", "id": id})
 }
 
 func (s *Server) handleEditDigest(w http.ResponseWriter, r *http.Request) {
@@ -1486,7 +1499,7 @@ func (s *Server) handleGenerateDigest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, map[string]interface{}{
+	writeJSON(w, map[string]any{
 		"status": "ok",
 		"events": events,
 	})
@@ -1619,7 +1632,121 @@ func (s *Server) handleRemoveWebhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- Miniflux webhook receiver ---
+// --- Credential handlers ---
+
+func (s *Server) handleListCredentials(w http.ResponseWriter, r *http.Request) {
+	creds, err := s.svc.ListCredentials(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if creds == nil {
+		creds = []db.Credential{}
+	}
+	// Redact secrets: show only first 8 chars of each config value
+	for i := range creds {
+		var raw map[string]string
+		if err := json.Unmarshal([]byte(creds[i].Config), &raw); err == nil {
+			for k, v := range raw {
+				if len(v) > 8 {
+					raw[k] = v[:8] + "..."
+				}
+			}
+			if b, err := json.Marshal(raw); err == nil {
+				creds[i].Config = string(b)
+			}
+		}
+	}
+	writeJSON(w, creds)
+}
+
+func (s *Server) handleAddCredential(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name   string         `json:"name"`
+		Type   string         `json:"type"`
+		Config map[string]any `json:"config"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if req.Type == "" {
+		http.Error(w, "type is required", http.StatusBadRequest)
+		return
+	}
+
+	configStr := "{}"
+	if req.Config != nil {
+		b, err := json.Marshal(req.Config)
+		if err != nil {
+			http.Error(w, "invalid config", http.StatusBadRequest)
+			return
+		}
+		configStr = string(b)
+	}
+
+	id, err := s.svc.AddCredential(r.Context(), req.Name, req.Type, configStr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	writeJSON(w, map[string]string{"status": "created", "id": id})
+}
+
+func (s *Server) handleUpdateCredential(w http.ResponseWriter, r *http.Request) {
+	id, ok := requirePathValue(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var req struct {
+		Name   string         `json:"name"`
+		Type   string         `json:"type"`
+		Config map[string]any `json:"config"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	configStr := "{}"
+	if req.Config != nil {
+		b, err := json.Marshal(req.Config)
+		if err != nil {
+			http.Error(w, "invalid config", http.StatusBadRequest)
+			return
+		}
+		configStr = string(b)
+	}
+
+	cred := db.Credential{
+		ID:     id,
+		Name:   req.Name,
+		Type:   req.Type,
+		Config: configStr,
+	}
+	if err := s.svc.UpdateCredential(r.Context(), cred); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRemoveCredential(w http.ResponseWriter, r *http.Request) {
+	id, ok := requirePathValue(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := s.svc.RemoveCredential(r.Context(), id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
 
 // handleMinifluxWebhook receives webhook events from Miniflux.
 // Authentication is via HMAC-SHA256 signature in the X-Miniflux-Signature header.

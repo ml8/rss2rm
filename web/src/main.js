@@ -30,6 +30,7 @@ function showApp(user) {
     fetchDigests();
     fetchDeliveries();
     fetchWebhooks();
+    fetchCredentials();
     populateArticleDigestSelect();
     initSSE();
 }
@@ -594,6 +595,11 @@ document.getElementById('addWebhookForm').addEventListener('submit', async (e) =
     }
 });
 
+document.getElementById('addCredentialForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    addCredential();
+});
+
 async function removeWebhook(id) {
     try {
         await fetch(`${API_BASE}/webhooks/${id}`, { method: 'DELETE' });
@@ -602,6 +608,108 @@ async function removeWebhook(id) {
     } catch (err) {
         showToast(`Error: ${err.message}`, 'error');
     }
+}
+
+// --- Credentials ---
+
+const credentialList = document.getElementById('credentialList');
+let cachedCredentials = [];
+
+async function fetchCredentials() {
+    try {
+        const response = await fetch(`${API_BASE}/credentials`);
+        if (!response.ok) throw new Error('Failed to fetch credentials');
+        const credentials = await response.json();
+        cachedCredentials = credentials || [];
+        renderCredentials(cachedCredentials);
+        populateCredentialSelects();
+    } catch (err) {
+        console.warn('Could not fetch credentials:', err);
+        credentialList.innerHTML = `<tr><td colspan="4">Error loading credentials</td></tr>`;
+    }
+}
+
+function renderCredentials(creds) {
+    if (!creds || creds.length === 0) {
+        credentialList.innerHTML = `<tr><td colspan="4">No credentials configured</td></tr>`;
+        return;
+    }
+
+    credentialList.innerHTML = creds.map(c => {
+        const typeLabels = { substack_cookie: 'Substack Cookie' };
+        const typeLabel = typeLabels[c.type] || c.type;
+        const updatedAt = formatCredentialAge(c.updated_at);
+
+        return `
+        <tr>
+            <td>${escapeHtml(c.name)}</td>
+            <td>${escapeHtml(typeLabel)}</td>
+            <td><small>${updatedAt}</small></td>
+            <td><button class="btn-sm outline secondary" onclick="removeCredential('${c.id}')">Remove</button></td>
+        </tr>`;
+    }).join('');
+}
+
+// Show relative age with a warning for credentials older than 90 days.
+function formatCredentialAge(dateStr) {
+    if (!dateStr || dateStr.startsWith('0001')) return 'Unknown';
+    const updated = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - updated;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return '1 day ago';
+    const label = `${diffDays} days ago`;
+    if (diffDays > 90) return `⚠️ ${label} (expired?)`;
+    return label;
+}
+
+async function addCredential() {
+    const name = document.getElementById('credentialName').value;
+    const type = document.getElementById('credentialType').value;
+    const substackSid = document.getElementById('credentialSubstackSid').value;
+
+    if (!name || !substackSid) {
+        showToast('Name and cookie value are required', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/credentials`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, type, config: { substack_sid: substackSid } }),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        showToast('Credential added');
+        document.getElementById('addCredentialForm').reset();
+        fetchCredentials();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
+async function removeCredential(id) {
+    if (!confirm('Remove this credential?')) return;
+    try {
+        await fetch(`${API_BASE}/credentials/${id}`, { method: 'DELETE' });
+        showToast('Credential removed');
+        fetchCredentials();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
+// Populate credential dropdowns in add/edit feed forms.
+function populateCredentialSelects() {
+    const selects = [
+        document.getElementById('addFeedCredential'),
+        document.getElementById('editFeedCredential'),
+    ];
+    const options = '<option value="">None</option>' +
+        (cachedCredentials || []).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+    selects.forEach(sel => { if (sel) sel.innerHTML = options; });
 }
 
 function escapeHtml(text) {
@@ -984,12 +1092,13 @@ function updateDigestDestinationSelect(dests) {
 
 // --- Event Listeners & Init ---
 
-function editFeed(id, name, directory, deliverIndividually, retain) {
+function editFeed(id, name, directory, deliverIndividually, retain, credentialId) {
     document.getElementById('editFeedId').value = id;
     document.getElementById('editFeedName').value = name || '';
     document.getElementById('editFeedDirectory').value = directory || '';
     document.getElementById('editFeedIndividual').checked = !!deliverIndividually;
     document.getElementById('editFeedRetain').value = retain || 0;
+    document.getElementById('editFeedCredential').value = credentialId || '';
     
     const dirGroup = document.getElementById('editFeedDirectoryGroup');
     dirGroup.style.display = deliverIndividually ? '' : 'none';
@@ -1016,7 +1125,7 @@ feedList.addEventListener('click', (e) => {
         e.preventDefault();
         const id = editBtn.dataset.editFeed;
         const feed = allFeeds.find(f => f.id === id);
-        if (feed) editFeed(id, feed.name, feed.directory || '', !!feed.deliver_individually, feed.retain || 0);
+        if (feed) editFeed(id, feed.name, feed.directory || '', !!feed.deliver_individually, feed.retain || 0, feed.credential_id || '');
     }
     const removeBtn = e.target.closest('[data-remove-feed]');
     if (removeBtn) {
@@ -1072,17 +1181,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const newDirectory = document.getElementById('editFeedDirectory').value;
             const deliverIndividually = document.getElementById('editFeedIndividual').checked;
             const retain = parseInt(document.getElementById('editFeedRetain').value) || 0;
+            const credentialId = document.getElementById('editFeedCredential').value;
             
+            const body = { 
+                name: newName,
+                directory: newDirectory,
+                deliver_individually: deliverIndividually,
+                retain: retain
+            };
+            if (credentialId) body.credential_id = credentialId;
+            else body.credential_id = '';
+
             try {
                 const response = await fetch(`${API_BASE}/feeds/${id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        name: newName,
-                        directory: newDirectory,
-                        deliver_individually: deliverIndividually,
-                        retain: retain
-                    })
+                    body: JSON.stringify(body)
                 });
                 if (!response.ok) {
                     const txt = await response.text();
@@ -1160,6 +1274,7 @@ document.addEventListener('DOMContentLoaded', () => {
 addFeedForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const formData = new FormData(addFeedForm);
+    const credentialId = document.getElementById('addFeedCredential').value;
     const data = {
         url: formData.get('url'),
         name: formData.get('name'),
@@ -1167,6 +1282,7 @@ addFeedForm.addEventListener('submit', (e) => {
         backfill: parseInt(formData.get('backfill')) || 5,
         deliver_individually: document.getElementById('addFeedIndividual').checked
     };
+    if (credentialId) data.credential_id = credentialId;
     addFeed(data);
 });
 
@@ -1289,6 +1405,7 @@ function initSSE() {
 window.switchDestTab = switchDestTab;
 window.updateDestFormFields = updateDestFormFields;
 window.removeWebhook = removeWebhook;
+window.removeCredential = removeCredential;
 
 // Init — check auth first, then load data
 checkAuth();

@@ -42,13 +42,14 @@ type DB struct {
 
 // Feed represents an RSS/Atom feed subscription.
 type Feed struct {
-	ID         string
-	URL        string
-	Name       string
-	LastPolled time.Time
-	Active     bool
-	Backfill   int
-	UserID     string
+	ID           string
+	URL          string
+	Name         string
+	LastPolled   time.Time
+	Active       bool
+	Backfill     int
+	CredentialID *string // FK to credentials table (optional)
+	UserID       string
 }
 
 // Destination represents a configured upload target (e.g., reMarkable, email, file).
@@ -63,12 +64,23 @@ type Destination struct {
 
 // Webhook represents a configured incoming webhook (e.g., Miniflux).
 type Webhook struct {
-	ID            string
-	UserID        string
-	Type          string // "miniflux"
-	Secret        string // HMAC secret for signature validation
-	Config        string // JSON blob with type-specific config (e.g., digest_id, directory)
-	Active        bool
+	ID     string
+	UserID string
+	Type   string // "miniflux"
+	Secret string // HMAC secret for signature validation
+	Config string // JSON blob with type-specific config (e.g., digest_id, directory)
+	Active bool
+}
+
+// Credential represents stored authentication for fetching content from a
+// source that requires login (e.g., Substack session cookie).
+type Credential struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Name      string    `json:"name"`
+	Type      string    `json:"type"`
+	Config    string    `json:"config"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Entry represents a single article fetched from a feed.
@@ -273,6 +285,15 @@ func (d *DB) initSchema() error {
 			active BOOLEAN DEFAULT 1,
 			FOREIGN KEY(user_id) REFERENCES users(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS credentials (
+			id VARCHAR(255) PRIMARY KEY,
+			user_id VARCHAR(255) NOT NULL,
+			name TEXT NOT NULL,
+			type VARCHAR(255) NOT NULL,
+			config TEXT NOT NULL,
+			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(user_id) REFERENCES users(id)
+		)`,
 	}
 
 	// Create settings first for version check
@@ -286,10 +307,13 @@ func (d *DB) initSchema() error {
 		}
 	}
 
-	d.upsertSetting("schema_version", "6")
+	d.upsertSetting("schema_version", "7")
 
 	// Migration: add content column to entries (v6)
 	d.Exec("ALTER TABLE entries ADD COLUMN content TEXT")
+
+	// Migration: add credential_id to feeds (v7)
+	d.Exec("ALTER TABLE feeds ADD COLUMN credential_id VARCHAR(255)")
 
 	return nil
 }
@@ -413,9 +437,9 @@ func (db *DB) InsertFeed(userID string, f Feed) (string, error) {
 	f.ID = uuid.New().String()
 	f.UserID = userID
 	_, err := db.Exec(`
-		INSERT INTO feeds (id, url, name, active, backfill, user_id)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, f.ID, f.URL, f.Name, f.Active, f.Backfill, f.UserID)
+		INSERT INTO feeds (id, url, name, active, backfill, credential_id, user_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, f.ID, f.URL, f.Name, f.Active, f.Backfill, f.CredentialID, f.UserID)
 	if err != nil {
 		return "", err
 	}
@@ -438,7 +462,7 @@ func (db *DB) DeactivateFeedsByURLExceptID(userID string, url string, id string)
 }
 
 func (db *DB) GetActiveFeedByURL(userID string, url string) (*Feed, error) {
-	query := `SELECT id, url, name, last_polled, active, backfill, user_id FROM feeds WHERE active = 1 AND url = ? AND user_id = ? ORDER BY id LIMIT 1`
+	query := `SELECT id, url, name, last_polled, active, backfill, credential_id, user_id FROM feeds WHERE active = 1 AND url = ? AND user_id = ? ORDER BY id LIMIT 1`
 	row := db.QueryRow(query, url, userID)
 
 	f, err := scanFeed(row)
@@ -453,14 +477,14 @@ func (db *DB) GetActiveFeedByURL(userID string, url string) (*Feed, error) {
 
 func (db *DB) UpdateFeed(userID string, f Feed) error {
 	_, err := db.Exec(`
-		UPDATE feeds SET url = ?, name = ?, active = ?, backfill = ?
+		UPDATE feeds SET url = ?, name = ?, active = ?, backfill = ?, credential_id = ?
 		WHERE id = ? AND user_id = ?
-	`, f.URL, f.Name, f.Active, f.Backfill, f.ID, userID)
+	`, f.URL, f.Name, f.Active, f.Backfill, f.CredentialID, f.ID, userID)
 	return err
 }
 
 func (db *DB) GetActiveFeeds(userID string) ([]Feed, error) {
-	query := `SELECT id, url, name, last_polled, active, backfill, user_id FROM feeds WHERE active = 1 AND url NOT LIKE '_ingest:%' AND user_id = ?`
+	query := `SELECT id, url, name, last_polled, active, backfill, credential_id, user_id FROM feeds WHERE active = 1 AND url NOT LIKE '_ingest:%' AND user_id = ?`
 	rows, err := db.Query(query, userID)
 	if err != nil {
 		return nil, err
@@ -497,8 +521,9 @@ func scanFeed(s scanner) (*Feed, error) {
 	var f Feed
 	var lastPolled sql.NullTime
 	var backfill sql.NullInt32
+	var credID sql.NullString
 
-	if err := s.Scan(&f.ID, &f.URL, &f.Name, &lastPolled, &f.Active, &backfill, &f.UserID); err != nil {
+	if err := s.Scan(&f.ID, &f.URL, &f.Name, &lastPolled, &f.Active, &backfill, &credID, &f.UserID); err != nil {
 		return nil, err
 	}
 	if lastPolled.Valid {
@@ -506,6 +531,9 @@ func scanFeed(s scanner) (*Feed, error) {
 	}
 	if backfill.Valid {
 		f.Backfill = int(backfill.Int32)
+	}
+	if credID.Valid {
+		f.CredentialID = &credID.String
 	}
 	return &f, nil
 }
@@ -773,7 +801,7 @@ func (db *DB) RemoveFeedFromDigest(digestID, feedID string) error {
 
 // GetFeedsForDigest returns all active feeds belonging to a digest.
 func (db *DB) GetFeedsForDigest(userID string, digestID string) ([]Feed, error) {
-	query := `SELECT f.id, f.url, f.name, f.last_polled, f.active, f.backfill, f.user_id
+	query := `SELECT f.id, f.url, f.name, f.last_polled, f.active, f.backfill, f.credential_id, f.user_id
 		FROM feeds f
 		JOIN digest_feeds df ON f.id = df.feed_id
 		WHERE df.digest_id = ? AND f.active = 1 AND f.user_id = ?`
@@ -928,61 +956,61 @@ func (db *DB) GetUserByID(id string) (*User, error) {
 
 // GetUserCount returns the total number of registered users.
 func (db *DB) GetUserCount() (int, error) {
-var count int
-err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
-return count, err
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	return count, err
 }
 
 // CheckPassword verifies a password against a user's stored bcrypt hash.
 func CheckPassword(user *User, password string) bool {
-return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) == nil
+	return bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) == nil
 }
 
 // CreateSession generates a cryptographically random session token and stores it.
 func (db *DB) CreateSession(userID string) (*Session, error) {
-b := make([]byte, sessionTokenBytes)
-if _, err := rand.Read(b); err != nil {
-return nil, fmt.Errorf("failed to generate session token: %w", err)
-}
-token := hex.EncodeToString(b)
-expiresAt := time.Now().Add(sessionDuration)
+	b := make([]byte, sessionTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		return nil, fmt.Errorf("failed to generate session token: %w", err)
+	}
+	token := hex.EncodeToString(b)
+	expiresAt := time.Now().Add(sessionDuration)
 
-_, err := db.Exec(
-"INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-token, userID, expiresAt,
-)
-if err != nil {
-return nil, err
-}
-return &Session{Token: token, UserID: userID, CreatedAt: time.Now(), ExpiresAt: expiresAt}, nil
+	_, err := db.Exec(
+		"INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+		token, userID, expiresAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &Session{Token: token, UserID: userID, CreatedAt: time.Now(), ExpiresAt: expiresAt}, nil
 }
 
 // GetSession returns the session for a token, or nil if not found or expired.
 func (db *DB) GetSession(token string) (*Session, error) {
-row := db.QueryRow(
-"SELECT token, user_id, created_at, expires_at FROM sessions WHERE token = ? AND expires_at > ?",
-token, time.Now(),
-)
-var s Session
-if err := row.Scan(&s.Token, &s.UserID, &s.CreatedAt, &s.ExpiresAt); err != nil {
-if err == sql.ErrNoRows {
-return nil, nil
-}
-return nil, err
-}
-return &s, nil
+	row := db.QueryRow(
+		"SELECT token, user_id, created_at, expires_at FROM sessions WHERE token = ? AND expires_at > ?",
+		token, time.Now(),
+	)
+	var s Session
+	if err := row.Scan(&s.Token, &s.UserID, &s.CreatedAt, &s.ExpiresAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &s, nil
 }
 
 // DeleteSession removes a session by token (logout).
 func (db *DB) DeleteSession(token string) error {
-_, err := db.Exec("DELETE FROM sessions WHERE token = ?", token)
-return err
+	_, err := db.Exec("DELETE FROM sessions WHERE token = ?", token)
+	return err
 }
 
 // CleanExpiredSessions removes all expired sessions.
 func (db *DB) CleanExpiredSessions() error {
-_, err := db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now())
-return err
+	_, err := db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now())
+	return err
 }
 
 // GetAllUsers returns all registered users.
@@ -1200,6 +1228,93 @@ func (db *DB) GetActiveWebhooksByType(webhookType string) ([]Webhook, error) {
 func (db *DB) DeleteWebhook(userID, id string) error {
 	_, err := db.Exec(`DELETE FROM webhooks WHERE id = ? AND user_id = ?`, id, userID)
 	return err
+}
+
+// --- Credential CRUD ---
+
+// InsertCredential creates a new credential and returns its ID.
+func (db *DB) InsertCredential(userID string, c Credential) (string, error) {
+	c.ID = uuid.New().String()
+	_, err := db.Exec(`
+		INSERT INTO credentials (id, user_id, name, type, config, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, c.ID, userID, c.Name, c.Type, c.Config, time.Now())
+	if err != nil {
+		return "", err
+	}
+	return c.ID, nil
+}
+
+// GetCredentials returns all credentials for a user.
+func (db *DB) GetCredentials(userID string) ([]Credential, error) {
+	rows, err := db.Query(`
+		SELECT id, user_id, name, type, config, updated_at
+		FROM credentials WHERE user_id = ?
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var creds []Credential
+	for rows.Next() {
+		c, err := scanCredential(rows)
+		if err != nil {
+			return nil, err
+		}
+		creds = append(creds, *c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return creds, nil
+}
+
+// GetCredentialByID returns a single credential or nil if not found.
+func (db *DB) GetCredentialByID(userID, id string) (*Credential, error) {
+	row := db.QueryRow(`
+		SELECT id, user_id, name, type, config, updated_at
+		FROM credentials WHERE id = ? AND user_id = ?
+	`, id, userID)
+
+	c, err := scanCredential(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// UpdateCredential updates a credential's name, type, and config.
+func (db *DB) UpdateCredential(userID string, c Credential) error {
+	_, err := db.Exec(`
+		UPDATE credentials SET name = ?, type = ?, config = ?, updated_at = ?
+		WHERE id = ? AND user_id = ?
+	`, c.Name, c.Type, c.Config, time.Now(), c.ID, userID)
+	return err
+}
+
+// DeleteCredential removes a credential. Feeds referencing it will have
+// their credential_id set to NULL by the caller.
+func (db *DB) DeleteCredential(userID, id string) error {
+	// Clear credential_id from any feeds using this credential
+	db.Exec("UPDATE feeds SET credential_id = NULL WHERE credential_id = ? AND user_id = ?", id, userID)
+	_, err := db.Exec(`DELETE FROM credentials WHERE id = ? AND user_id = ?`, id, userID)
+	return err
+}
+
+func scanCredential(s scanner) (*Credential, error) {
+	var c Credential
+	var updatedAt sql.NullTime
+	if err := s.Scan(&c.ID, &c.UserID, &c.Name, &c.Type, &c.Config, &updatedAt); err != nil {
+		return nil, err
+	}
+	if updatedAt.Valid {
+		c.UpdatedAt = updatedAt.Time
+	}
+	return &c, nil
 }
 
 // UpdateUserPassword updates a user's password with a new bcrypt hash.

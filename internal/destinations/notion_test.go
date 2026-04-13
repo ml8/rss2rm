@@ -325,15 +325,15 @@ func TestNotionDestination_BuildPageRequest(t *testing.T) {
 	}
 
 	// Check that properties contain title
-	props, ok := pageData["properties"].(map[string]interface{})
+	props, ok := pageData["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("properties should be a map")
 	}
-	title, ok := props["title"].(map[string]interface{})
+	title, ok := props["title"].(map[string]any)
 	if !ok {
 		t.Fatal("title property should be a map")
 	}
-	titleArray, ok := title["title"].([]map[string]interface{})
+	titleArray, ok := title["title"].([]map[string]any)
 	if !ok {
 		t.Fatal("title.title should be an array")
 	}
@@ -349,7 +349,7 @@ func TestNotionDestination_BuildPageRequest(t *testing.T) {
 	}
 
 	// Check that children blocks exist
-	children, ok := pageData["children"].([]map[string]interface{})
+	children, ok := pageData["children"].([]map[string]any)
 	if !ok {
 		t.Fatal("children should be an array")
 	}
